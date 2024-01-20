@@ -1,0 +1,14 @@
+{
+    "builtin": "False",
+    "default_enabled": "True",
+    "type": "extension",
+    "rocket_mode_compatible": "False",
+    "name": "EULE-Tools",
+    "description": "Extensions for PyRevit",
+    "author": "Raul Kalev",
+    "author_profile": "https://github.com/RaulKalev",
+    "url": "https://github.com/RaulKalev/EULE-Tools.git",
+    "website": "https://github.com/RaulKalev/EULE-Tools",
+    "image": "",
+    "dependencies": []
+}
