@@ -1,12 +1,3 @@
-# -*- coding: utf-8 -*-
-__title__ = "Draw Line"  # Name of the button displayed in Revit
-__author__ = "Raul Kalev"
-__version__ = 'Version: 0.1'
-__doc__ = """
-Select 2 detail items and draw a detail line between those 2 items
-"""
-
-
 import clr
 clr.AddReference('System.Windows.Forms')
 clr.AddReference('System.Drawing')
@@ -14,14 +5,12 @@ clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
 
 from Autodesk.Revit.UI import TaskDialog
-from Autodesk.Revit.DB import XYZ
 from System.Drawing import Size, Point, Font, FontStyle
-from System.Windows.Forms import Application, Button, Form, FormWindowState
+from System.Windows.Forms import Application, Button, Form, FormWindowState, ComboBox
 from Autodesk.Revit.UI.Selection import ObjectType
-from Autodesk.Revit.DB import Line, Transaction
-from Autodesk.Revit.DB import GraphicsStyle, FilteredElementCollector, BuiltInCategory
-from Autodesk.Revit.DB import GraphicsStyle, FilteredElementCollector, CategoryType, BuiltInCategory, Transaction, LinePatternElement
-from System.Windows.Forms import ComboBox
+from Autodesk.Revit.DB import Line, Transaction, XYZ, CategoryType, BuiltInCategory, Category, CategoryType
+from Autodesk.Revit.DB import FilteredElementCollector, BuiltInCategory, CategoryType, Transaction, ElementId, GraphicsStyle
+
 
 def get_line_styles(doc):
     line_styles = {}
@@ -30,69 +19,70 @@ def get_line_styles(doc):
     collector = FilteredElementCollector(doc).OfClass(GraphicsStyle)
 
     for elem in collector:
-        # Filtering for elements that are line styles (not patterns or materials)
-        if elem.GraphicsStyleCategory != None and elem.GraphicsStyleCategory.CategoryType == CategoryType.Annotation:
+        # Filtering for elements that are line styles
+        if elem.GraphicsStyleCategory is not None and elem.GraphicsStyleCategory.CategoryType == CategoryType.Annotation:
             line_styles[elem.Name] = elem.Id
 
     return line_styles
-
 
 class SimpleForm(Form):
     def __init__(self, uidoc):
         self.uidoc = uidoc
         self.Text = 'Draw Lines'
-        self.Size = Size(250, 550)
+        self.Size = Size(350, 90)
         self.midpoint_location = None
 
         # Custom font and size for buttons
-        buttonFont = Font("Arial", 12, FontStyle.Bold)
-        buttonSize = Size(150, 75)  # Uniform size for all buttons
-        
+        #buttonFont = Font("Arial", 12, FontStyle.Bold)
+        buttonSize = Size(30, 30)
+        yCord = 10
+
         # Variables to store element locations
         self.element1_location = None
         self.element2_location = None
 
         # Button for selecting Element 1
         self.button1 = Button()
-        self.button1.Text = 'Select Element 1'
-        self.button1.Font = buttonFont
+        self.button1.Text = '1.'
+        #self.button1.Font = buttonFont
         self.button1.Size = buttonSize
-        self.button1.Location = Point(10, 30)
+        self.button1.Location = Point(10, yCord)
         self.button1.Click += self.on_button1_click
         self.Controls.Add(self.button1)
 
         # Button for selecting Element 2
         self.button2 = Button()
-        self.button2.Text = 'Select Element 2'
-        self.button2.Font = buttonFont
+        self.button2.Text = '2.'
+        #self.button2.Font = buttonFont
         self.button2.Size = buttonSize
-        self.button2.Location = Point(10, 105)
+        self.button2.Location = Point(45, yCord)
         self.button2.Click += self.on_button2_click
         self.Controls.Add(self.button2)
 
-        # Button to display stored values
+        '''# Button to display stored values
         self.button3 = Button()
         self.button3.Text = 'Show Stored Values'
-        self.button3.Font = buttonFont
+        #self.button3.Font = buttonFont
         self.button3.Size = buttonSize
         self.button3.Location = Point(10, 180)
         self.button3.Click += self.on_button3_click
         self.Controls.Add(self.button3)
-        
+        '''
         
        # Add this new button in your __init__ method
         self.button4 = Button()
-        self.button4.Text = 'Draw Detail Line'
-        self.button4.Font = buttonFont
-        self.button4.Size = buttonSize
-        self.button4.Location = Point(10, 255)
+        self.button4.Text = 'Draw'
+        #self.button4.Font = buttonFont
+        self.button4.Size = Size(50, 30)
+        self.button4.Location = Point(80, yCord)
         self.button4.Click += self.on_button4_click
         self.Controls.Add(self.button4)
 
         self.line_styles = get_line_styles(uidoc.Document)
         self.dropdown = ComboBox()
-        self.dropdown.Location = Point(10, 330)
+        self.dropdown.Location = Point(150, 15)
         self.dropdown.Size = Size(150, 20)
+        self.dropdown.Text = "Select line type"  # Set default text
             # Sort the line style names alphabetically and add them to the dropdown
         for name in sorted(self.line_styles.keys()):
             self.dropdown.Items.Add(name)
@@ -183,8 +173,9 @@ class SimpleForm(Form):
 
                         # Set line style for each detail curve and create them
                         for line_geom in [line1_geometry, line2_geometry, line3_geometry]:
-                            line = self.uidoc.Document.Create.NewDetailCurve(self.uidoc.ActiveView, line_geom)
-                            line.LineStyle = self.uidoc.Document.GetElement(selected_style_id)
+                            detail_line = self.uidoc.Document.Create.NewDetailCurve(self.uidoc.ActiveView, line_geom)
+                            if hasattr(detail_line, 'LineStyle'):
+                                detail_line.LineStyle = self.uidoc.Document.GetElement(selected_style_id)
 
                         trans.Commit()
                     except Exception as e:
@@ -194,8 +185,6 @@ class SimpleForm(Form):
                 TaskDialog.Show('Error', 'Midpoint not set.')
         else:
             TaskDialog.Show('Error', 'Please select both elements and a line style.')
-
-
 
 # To run this form, you need to pass the UIDocument from a RevitPythonShell script
 uidoc = __revit__.ActiveUIDocument

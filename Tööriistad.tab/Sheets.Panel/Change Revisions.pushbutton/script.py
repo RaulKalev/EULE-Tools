@@ -1,11 +1,3 @@
-# -*- coding: utf-8 -*-
-__title__ = "Change Revision"  # Name of the button displayed in Revit
-__author__ = "Raul Kalev"
-__version__ = 'Version: 0.1'
-__doc__ = """
-Add or remove a revision from selected sheets
-"""
-
 import clr
 import System
 clr.AddReference('System.Windows.Forms')
