@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import clr
 import System
 clr.AddReference('System.Windows.Forms')
@@ -16,6 +17,7 @@ class SheetSelectorForm(Form):
         self.Text = "Select Sheets"
         self.Size = Size(415, 650)
         self.doc = doc
+        #self.BackColor = Color.Black
 
          # Variables for color controls
         backgroundColor1 = Color.FromArgb(24, 24, 24)
