@@ -27,7 +27,6 @@ class SimpleForm(Form):
     def __init__(self, uidoc):
         self.uidoc = uidoc        
         self.parameters_in_memory = {}
-        self.Icon = Icon("Tööriistad.tab/Parameetrid.Panel/Parameter Copy.pushbutton/icon.ico")
         self.listViewColumnSorter = ListViewColumnSorter()
         self.fullListViewItems = []  # List to store all items
         self.InitializeComponent()
