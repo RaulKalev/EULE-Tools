@@ -8,12 +8,10 @@ clr.AddReference('RevitAPIUI')
 clr.AddReference('System.Windows.Forms')
 clr.AddReference('System.Drawing')
 from Autodesk.Revit.DB import FilteredElementCollector, ViewSchedule, SectionType
-from System.Drawing import Font, FontStyle
-from System.Windows.Forms import (Form, CheckedListBox, CheckBox, Label, PictureBox, PictureBoxSizeMode, ControlStyles,DockStyle, ListView, View,
-                                  DialogResult, AnchorStyles, MessageBox, MessageBoxButtons, Panel, Cursors, TextBox,BorderStyle, HorizontalAlignment,
-                                  MessageBoxIcon, FolderBrowserDialog, FormBorderStyle, Control, MouseButtons,FormWindowState, SortOrder)
-from System.Drawing import Color, Size, Point, Bitmap, ContentAlignment
-from System import Array
+from System.Windows.Forms import (Form, CheckBox, PictureBox, PictureBoxSizeMode, ListView, View,
+                                  DialogResult, AnchorStyles, MessageBox, MessageBoxButtons, Panel, HorizontalAlignment,
+                                  MessageBoxIcon, FolderBrowserDialog, FormBorderStyle)
+from System.Drawing import Color, Size, Point, Bitmap, Font, FontStyle
 from Snippets._imagePath import ImagePathHelper
 from Snippets._interactivePictureBox import InteractivePictureBox
 from Snippets._titlebar import TitleBar
@@ -58,7 +56,6 @@ class ScheduleListForm(Form):
         self.Text = appName
         self.Size = Size(windowWidth, windowHeight)
         color3 = Color.FromArgb(49, 49, 49)
-        color2 = Color.FromArgb(31, 31, 31)
         color1 = Color.FromArgb(24, 24, 24)
         colorText = Color.FromArgb(240,240,240)
         panelSize = 30
@@ -100,17 +97,18 @@ class ScheduleListForm(Form):
         self.checklist.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
         self.checklist.BackColor = color3
         self.checklist.ForeColor = colorText
+        self.checklist.Font = Font("Helvetica", 9, FontStyle.Regular)
         self.checklist.Columns.Add("Schedules", -2, HorizontalAlignment.Left)
         for schedule in schedules:
             self.checklist.Items.Add(schedule.Name)  # Add schedule names to the checklist
         self.checklist.ItemCheck += self.on_listview_item_check
     
-    
         # Create a checkbox for selecting all schedules
         self.selectAll = CheckBox()
         self.selectAll.Text = "Select All"
-        self.selectAll.Location = Point(10, panelSize+13)
+        self.selectAll.Location = Point(19, panelSize+13)
         self.selectAll.Anchor = AnchorStyles.Top | AnchorStyles.Left
+        self.selectAll.Font = Font("Helvetica", 8, FontStyle.Regular)
         self.selectAll.CheckedChanged += self.on_select_all_changed  # Event handler for checkbox change
         
         # Create an export button
@@ -209,11 +207,10 @@ class ScheduleListForm(Form):
         message += "\n\nDo you want to overwrite these files?"
         result = MessageBox.Show(message, "Confirm Overwrite", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
         return result == DialogResult.Yes
-                    
+    
 # Function to retrieve all ViewSchedules from the Revit document
 def get_schedules(doc):
     return FilteredElementCollector(doc).OfClass(ViewSchedule)
-
 
 # Main function to execute the script
 def main():

@@ -38,6 +38,7 @@ class TitleBar(Panel):
         self.init_ui(title, logo_image, minimize_image, close_image)
         self.Resize += self.on_titlebar_resize
 
+
     def init_ui(self, title, logo_image, minimize_image, close_image):
         # Set title bar properties
         self.BackColor = Color.FromArgb(49, 49, 49)
