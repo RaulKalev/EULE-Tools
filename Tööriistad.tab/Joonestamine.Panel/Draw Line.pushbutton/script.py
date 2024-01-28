@@ -6,12 +6,33 @@ clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
 
 from Autodesk.Revit.UI import TaskDialog
-from System.Drawing import Size, Point, Font, FontStyle
-from System.Windows.Forms import Application, Button, Form, FormWindowState, ComboBox
+from System.Drawing import Size, Point, Font, FontStyle, Bitmap, Color
+from System.Windows.Forms import Application, Button, Form, FormWindowState, ComboBox, FormBorderStyle
 from Autodesk.Revit.UI.Selection import ObjectType
 from Autodesk.Revit.DB import Line, Transaction, XYZ, CategoryType, BuiltInCategory, Category, CategoryType
 from Autodesk.Revit.DB import FilteredElementCollector, BuiltInCategory, CategoryType, Transaction, ElementId, GraphicsStyle
 
+from Snippets._imagePath import ImagePathHelper
+from Snippets._titlebar import TitleBar
+
+image_helper = ImagePathHelper()
+windowWidth = 310
+windowHeight = 80
+# Load images using the get_image_path function
+export_image_path = image_helper.get_image_path('Export.png')
+minimize_image_path = image_helper.get_image_path('Minimize.png')
+close_image_path = image_helper.get_image_path('Close.png')
+search_image_path = image_helper.get_image_path('Search.png')
+clear_image_path = image_helper.get_image_path('Clear.png')
+logo_image_path = image_helper.get_image_path('Logo.png')
+
+# Create Bitmap objects from the paths
+export_image = Bitmap(export_image_path)
+minimize_image = Bitmap(minimize_image_path)
+close_image = Bitmap(close_image_path)
+search_image = Bitmap(search_image_path)
+clear_image = Bitmap(clear_image_path)
+logo_image = Bitmap(logo_image_path)
 
 def get_line_styles(doc):
     line_styles = {}
@@ -29,18 +50,30 @@ def get_line_styles(doc):
 class SimpleForm(Form):
     def __init__(self, uidoc):
         self.uidoc = uidoc
-        self.Text = 'Draw Lines'
-        self.Size = Size(350, 90)
+        appName = 'Draw Lines'
+        self.Text = appName
+        self.Size = Size(windowWidth, windowHeight)
         self.midpoint_location = None
+        self.titleBar = TitleBar(self, appName, logo_image, minimize_image, close_image)
+        self.FormBorderStyle = FormBorderStyle.None
 
         # Custom font and size for buttons
         #buttonFont = Font("Arial", 12, FontStyle.Bold)
         buttonSize = Size(30, 30)
-        yCord = 10
-
+        yCord = 40
+        self.Controls.Add(self.titleBar)
+        colorText = Color.FromArgb(240,240,240)
+        colorText2 = Color.FromArgb(0,0,0)
+        backColor = Color.FromArgb(49,49,49)
+        self.ForeColor = colorText
+        self.BackColor = Color.FromArgb(24, 24, 24)
         # Variables to store element locations
         self.element1_location = None
         self.element2_location = None
+
+        # Handling form movement
+        self.dragging = False
+        self.offset = None
 
         # Button for selecting Element 1
         self.button1 = Button()
@@ -49,6 +82,8 @@ class SimpleForm(Form):
         self.button1.Size = buttonSize
         self.button1.Location = Point(10, yCord)
         self.button1.Click += self.on_button1_click
+        self.button1.BackColor = colorText
+        self.button1.ForeColor = colorText2
         self.Controls.Add(self.button1)
 
         # Button for selecting Element 2
@@ -58,6 +93,8 @@ class SimpleForm(Form):
         self.button2.Size = buttonSize
         self.button2.Location = Point(45, yCord)
         self.button2.Click += self.on_button2_click
+        self.button2.BackColor = colorText
+        self.button2.ForeColor = colorText2
         self.Controls.Add(self.button2)
 
         '''# Button to display stored values
@@ -77,11 +114,13 @@ class SimpleForm(Form):
         self.button4.Size = Size(50, 30)
         self.button4.Location = Point(80, yCord)
         self.button4.Click += self.on_button4_click
+        self.button4.BackColor = colorText
+        self.button4.ForeColor = colorText2
         self.Controls.Add(self.button4)
 
         self.line_styles = get_line_styles(uidoc.Document)
         self.dropdown = ComboBox()
-        self.dropdown.Location = Point(150, 15)
+        self.dropdown.Location = Point(150, 45)
         self.dropdown.Size = Size(150, 20)
         self.dropdown.Text = "Select line type"  # Set default text
             # Sort the line style names alphabetically and add them to the dropdown

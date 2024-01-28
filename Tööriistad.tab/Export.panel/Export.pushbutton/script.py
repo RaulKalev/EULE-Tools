@@ -2,91 +2,44 @@
 import clr
 import os
 import csv
+import sys
 clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
 clr.AddReference('System.Windows.Forms')
 clr.AddReference('System.Drawing')
 from Autodesk.Revit.DB import FilteredElementCollector, ViewSchedule, SectionType
 from System.Drawing import Font, FontStyle
-from System.Windows.Forms import (Form, CheckedListBox, CheckBox, Label, PictureBox, PictureBoxSizeMode, ControlStyles,
+from System.Windows.Forms import (Form, CheckedListBox, CheckBox, Label, PictureBox, PictureBoxSizeMode, ControlStyles,DockStyle, ListView, View,
                                   DialogResult, AnchorStyles, MessageBox, MessageBoxButtons, Panel, Cursors, TextBox,BorderStyle, HorizontalAlignment,
-                                  MessageBoxIcon, FolderBrowserDialog, FormBorderStyle, Control, MouseButtons,FormWindowState)
+                                  MessageBoxIcon, FolderBrowserDialog, FormBorderStyle, Control, MouseButtons,FormWindowState, SortOrder)
 from System.Drawing import Color, Size, Point, Bitmap, ContentAlignment
+from System import Array
+from Snippets._imagePath import ImagePathHelper
+from Snippets._interactivePictureBox import InteractivePictureBox
+from Snippets._titlebar import TitleBar
+from Snippets._searchBox import SearchBox
+from Snippets._windowResize import WindowResizer
 
-def get_image_path(image_filename):
-    image_folder = "Icons"
-    current_script_dir = os.path.dirname(__file__)
-    relative_image_path = os.path.join(current_script_dir, image_folder, image_filename)
-    return relative_image_path
-try:
-    test_image_path = get_image_path('Close.png')  # Replace with your image file name
-    test_bitmap = Bitmap(test_image_path)
-except Exception as e:
-    print("Error loading image:", e)
+# Instantiate ImagePathHelper
+image_helper = ImagePathHelper()
+windowWidth = 500 
+windowHeight = 390
 
+# Load images using the get_image_path function
+export_image_path = image_helper.get_image_path('Export.png')
+minimize_image_path = image_helper.get_image_path('Minimize.png')
+close_image_path = image_helper.get_image_path('Close.png')
+search_image_path = image_helper.get_image_path('Search.png')
+clear_image_path = image_helper.get_image_path('Clear.png')
+logo_image_path = image_helper.get_image_path('Logo.png')
 
-class InteractivePictureBox:
-    def __init__(self, pictureBox, normalImage, hoverImage, clickImage):
-        self.pictureBox = pictureBox
-        # Load images from file paths
-        self.normalImage = Bitmap(get_image_path(normalImage))
-        self.hoverImage = Bitmap(get_image_path(hoverImage))
-        self.clickImage = Bitmap(get_image_path(clickImage))
-
-        # Set initial image
-        self.pictureBox.Image = self.normalImage
-        self.pictureBox.SizeMode = PictureBoxSizeMode.StretchImage
-
-        # Subscribe to mouse events
-        self.pictureBox.MouseEnter += self.on_mouse_enter
-        self.pictureBox.MouseLeave += self.on_mouse_leave
-        self.pictureBox.MouseDown += self.on_mouse_down
-        self.pictureBox.MouseUp += self.on_mouse_up
-
-    def on_mouse_enter(self, sender, e):
-        self.pictureBox.Image = self.hoverImage
-
-    def on_mouse_leave(self, sender, e):
-        self.pictureBox.Image = self.normalImage
-
-    def on_mouse_down(self, sender, e):
-        self.pictureBox.Image = self.clickImage
-
-    def on_mouse_up(self, sender, e):
-        if self.pictureBox.ClientRectangle.Contains(self.pictureBox.PointToClient(Control.MousePosition)):
-            self.pictureBox.Image = self.hoverImage
-        else:
-            self.pictureBox.Image = self.normalImage
-
-    def update_image(self, newImage):
-        if self.pictureBox.Image is not None:
-            self.pictureBox.Image.Dispose()  # Dispose the old image
-        self.pictureBox.Image = newImage
-
-    def Dispose(self):
-        # Dispose all Bitmap resources
-        if self.normalImage is not None:
-            self.normalImage.Dispose()
-        if self.hoverImage is not None:
-            self.hoverImage.Dispose()
-        if self.clickImage is not None:
-            self.clickImage.Dispose()
-
-        if self.pictureBox.Image is not None:
-            self.pictureBox.Image.Dispose()
-
-class BorderlessTextBox(TextBox):
-    def __init__(self):
-        self.SetStyle(ControlStyles.UserPaint, True)
-        self.SetStyle(ControlStyles.AllPaintingInWmPaint, True)
-        self.SetStyle(ControlStyles.OptimizedDoubleBuffer, True)
-
-    def OnPaint(self, e):
-        # Call the base class method
-        TextBox.OnPaint(self, e)
-
-        # Draw a black border (comment this out for no border)
-        e.Graphics.DrawRectangle(Pens.Black, 0, 0, self.Width - 1, self.Height - 1)
+# Create Bitmap objects from the paths
+export_image = Bitmap(export_image_path)
+minimize_image = Bitmap(minimize_image_path)
+close_image = Bitmap(close_image_path)
+search_image = Bitmap(search_image_path)
+clear_image = Bitmap(clear_image_path)
+logo_image = Bitmap(logo_image_path)
 
 class ScheduleListForm(Form):
     def __init__(self, schedules):
@@ -95,9 +48,11 @@ class ScheduleListForm(Form):
         self.allSchedules = schedules
         # Constructor for the form
         appName = "Schedule Exporter"
-        windowWidth = 500 #285before
-        windowHeight = 400
 
+        self.titleBar = TitleBar(self, appName, logo_image, minimize_image, close_image)
+        self.searchBox = SearchBox(self, search_image, clear_image)
+        self.resizer = WindowResizer(self)
+        
         # Set the title and size of the window
         self.FormBorderStyle = FormBorderStyle.None
         self.Text = appName
@@ -112,119 +67,45 @@ class ScheduleListForm(Form):
         self.BackColor = color1
         self.ForeColor = colorText        
 
-        # Handling form resizing
-        self.isResizing = False
-        self.resizeHandleSize = 10  # Size of the area from the corner for resize handle
-        self.Resize += self.on_form_resize
-
-
-        # Attach mouse events for resizing
-        self.MouseDown += self.on_resize_mouse_down
-        self.MouseMove += self.on_resize_mouse_move
-        self.MouseUp += self.on_resize_mouse_up
-
         # Handling form movement
         self.dragging = False
         self.offset = None
 
-        # Load images using the get_image_path function
-        export_image_path = get_image_path('Export.png')
-        minimize_image_path = get_image_path('Minimize.png')
-        close_image_path = get_image_path('Close.png')
-
-        # Create Bitmap objects from the paths
-        export_image = Bitmap(export_image_path)
-        minimize_image = Bitmap(minimize_image_path)
-        close_image = Bitmap(close_image_path)
-
-        #Title bar
-        self.titleBar = Panel()
-        self.titleBar.MouseDown += self.form_mouse_down
-        self.titleBar.MouseMove += self.form_mouse_move
-        self.titleBar.MouseUp += self.form_mouse_up
-        self.titleBar.Location = Point(0,0)
-        self.titleBar.Size = Size(self.ClientSize.Width, panelSize)
-        self.titleBar.Anchor = AnchorStyles.Top | AnchorStyles.Right | AnchorStyles.Left
-        self.titleBar.BackColor = color3
-
-        # Title label
-        self.titleLabel = Label()
-        self.titleLabel.MouseDown += self.form_mouse_down
-        self.titleLabel.MouseMove += self.form_mouse_move
-        self.titleLabel.MouseUp += self.form_mouse_up
-        self.titleLabel.Text = appName
-        self.titleLabel.TextAlign = ContentAlignment.MiddleCenter
-        self.titleLabel.Location = Point(0,0)
-        self.titleLabel.Size = Size(self.titleBar.Width, self.titleBar.Height)
-        self.titleLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-        self.titleLabel.BackColor = Color.Transparent
-        self.titleLabel.ForeColor = colorText
-
-        #Title bar buttons
-        # Create a PictureBox for the close button
-        self.titleClose = PictureBox()
-        self.titleClose.Location = Point(windowWidth-25, 5)
-        self.titleClose.Size = Size(20, 20)
-        self.titleClose.Image = Bitmap(get_image_path('Close.png'))
-        self.titleClose.SizeMode = PictureBoxSizeMode.StretchImage
-        self.titleClose.BackColor = color3
-        self.titleClose.Anchor = AnchorStyles.Top | AnchorStyles.Right
-        self.titleClose.Click += self.close_button_clicked
-        self.titleCloseInteractive = InteractivePictureBox(
-            self.titleClose, 'Close.png', 'CloseHover.png', 'CloseClick.png')
-
-        #minimize
-        self.titleMinimize = PictureBox()
-        self.titleMinimize.Location = Point(windowWidth-45,5)
-        self.titleMinimize.Size = Size(20,20)
-        self.titleMinimize.Image = Bitmap(get_image_path('Minimize.png')) 
-        self.titleMinimize.SizeMode = PictureBoxSizeMode.StretchImage
-        self.titleMinimize.BackColor = color3
-        self.titleMinimize.Anchor = AnchorStyles.Top | AnchorStyles.Right
-        self.titleMinimizeInteractive = InteractivePictureBox(
-            self.titleMinimize, 'Minimize.png', 'MinimizeHover.png', 'MinimizeClick.png')
-        self.titleMinimize.Click += self.minimize_button_clicked
-       
-        # Create a search box
-        self.searchBox = TextBox()
-        self.searchBox.Text = "Search"
-        self.searchBox.Font = Font(self.searchBox.Font.FontFamily, 9, FontStyle.Regular)  # Adjust the font size as needed
-        self.searchBox.TextAlign = HorizontalAlignment.Right
-        self.searchBox.Location = Point(windowWidth-250, panelSize + 15)
-        self.searchBox.Size = Size(200, 20)
-        self.searchBox.BorderStyle = BorderStyle.None  # Remove border
-        self.searchBox.BackColor = color3  # Match background color
-        self.searchBox.ForeColor = colorText
-        self.searchBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-        self.searchBox.TextChanged += self.on_search_changed  # Event handler for text change
-        self.searchBox.Enter += self.search_box_enter
-        self.searchBox.Leave += self.search_box_leave
-
-        self.searchPanel = Panel()
-        self.searchPanel.Location = Point(windowWidth-260, panelSize + 12)
-        self.searchPanel.Size = Size(220, 22)  # Adjust size to accommodate padding
-        self.searchPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-        self.searchPanel.BackColor = self.searchBox.BackColor  # Match the background color
-        self.searchPanel.Controls.Add(self.searchBox)
-
         # Panel to contain the CheckedListBox
         self.panel = Panel()
-        self.panel.Location = Point(10, panelSize + 50)
-        self.panel.Size = Size(windowWidth-20, self.ClientSize.Height - (panelSize + 60))
+        self.panel.Location = Point(11, panelSize + 41)
+        self.panel.Size = Size(windowWidth-22, self.ClientSize.Height - (panelSize + 52))
         self.panel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
         self.panel.BackColor = color3  # Match the form's background color
+        self.panelBorder = Panel()
+        self.panelBorder.Location = Point(15, panelSize + 45)
+        self.panelBorder.Size = Size(windowWidth-35, self.ClientSize.Height - (panelSize + 63))
+        self.panelBorder.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
+        self.panelBorder.BackColor = colorText
+        self.panelBorderLine = Panel()
+        self.panelBorderLine.Location = Point(10, panelSize + 40)
+        self.panelBorderLine.Size = Size(windowWidth-20, self.ClientSize.Height - (panelSize + 50))
+        self.panelBorderLine.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
+        self.panelBorderLine.BackColor = Color.FromArgb(69,69,69)
 
         # Create a checklist box to list schedules
-        self.checklist = CheckedListBox()
-        self.checklist.Location = Point(-2, -2)  # Slightly offset inside the panel
-        self.checklist.Size = Size(windowWidth-16, self.panel.Height + 18)  # Slightly larger to hide borders
+        self.checklist = ListView()
+        self.checklist.View = View.Details
+        self.checklist.CheckBoxes = True
+        self.checklist.FullRowSelect = True
+        self.checklist.GridLines = False
+        self.checklist.MultiSelect = True
+        self.checklist.Location = Point(-2,-26)  # Slightly offset inside the panel
+        self.checklist.Size = Size(windowWidth, self.panel.Height+34)  # Slightly larger to hide borders
         self.checklist.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
-        self.checklist.CheckOnClick = True
         self.checklist.BackColor = color3
         self.checklist.ForeColor = colorText
+        self.checklist.Columns.Add("Schedules", -2, HorizontalAlignment.Left)
         for schedule in schedules:
             self.checklist.Items.Add(schedule.Name)  # Add schedule names to the checklist
-        
+        self.checklist.ItemCheck += self.on_listview_item_check
+    
+    
         # Create a checkbox for selecting all schedules
         self.selectAll = CheckBox()
         self.selectAll.Text = "Select All"
@@ -234,7 +115,7 @@ class ScheduleListForm(Form):
         
         # Create an export button
         self.exportButton = PictureBox()
-        self.exportButton.Location = Point(windowWidth-35, (panelSize+10))
+        self.exportButton.Location = Point(windowWidth-39, (panelSize+7))
         self.exportButton.Size = Size(30,30)
         self.exportButton.Image = export_image
         self.exportButton.SizeMode = PictureBoxSizeMode.StretchImage
@@ -244,91 +125,30 @@ class ScheduleListForm(Form):
         self.exportButton, 'Export.png', 'ExportHover.png', 'ExportClick.png')
         self.exportButton.Click += self.on_export_clicked  # Event handler for button click
         
-        self.titleBar.Controls.Add(self.titleLabel)
-        self.Controls.Add(self.titleClose)
-        self.Controls.Add(self.titleMinimize)
-        self.Controls.Add(self.titleBar)
         self.Controls.Add(self.searchBox)
-        self.Controls.Add(self.searchPanel)
-        self.panel.Controls.Add(self.checklist)
+        self.Controls.Add(self.titleBar)
+        
+        self.Controls.Add(self.panelBorder)
         self.Controls.Add(self.panel)
-        self.Controls.Add(self.selectAll)  # Add the checkbox to the form
-        self.Controls.Add(self.exportButton)  # Add the button to the form
-        self.Shown += self.on_form_shown
+        self.Controls.Add(self.panelBorderLine)
+        
+        self.panelBorder.Controls.Add(self.checklist)
+        
+        self.Controls.Add(self.selectAll)
+        self.Controls.Add(self.exportButton)
 
-    def on_form_resize(self, sender, e):
-        # Redraw the form and its contents
-        self.Invalidate()
+    def on_listview_item_check(self, sender, item_check_event_args):
+        # Logic to handle item check events
+        item = self.checklist.Items[item_check_event_args.Index]
+        # If you need to do something when an item is checked/unchecked, you can add it here
 
-    def search_box_enter(self, sender, e):
-        if self.searchBox.Text == "Search":
-            self.searchBox.Text = ""
-
-    def search_box_leave(self, sender, e):
-        if self.searchBox.Text.strip() == "":
-            self.searchBox.Text = "Search"
-
-    # Moving the window
-    def form_mouse_down(self, sender, e):
-        if e.Button == MouseButtons.Left:
-            self.dragging = True
-            self.offset = Point(e.X - self.titleLabel.Left, e.Y - self.titleLabel.Top)
-
-    def form_mouse_move(self, sender, e):
-        if self.dragging:
-            screenPosition = Point(e.X + self.Location.X, e.Y + self.Location.Y)
-            self.Location = Point(screenPosition.X - self.offset.X, screenPosition.Y - self.offset.Y)
-
-    def form_mouse_up(self, sender, e):
-        self.dragging = False    
-
-    # Event handlers for resizing
-    def on_resize_mouse_down(self, sender, e):
-        if e.X >= self.Width - self.resizeHandleSize and e.Y >= self.Height - self.resizeHandleSize:
-            self.isResizing = True
-
-    def on_resize_mouse_move(self, sender, e):
-        if self.isResizing:
-            newWidth = max(e.X, self.minWidth)
-            newHeight = max(e.Y, self.minHeight)
-            self.Width = newWidth
-            self.Height = newHeight
-        elif e.X >= self.Width - self.resizeHandleSize and e.Y >= self.Height - self.resizeHandleSize:
-            self.Cursor = Cursors.SizeNWSE
-        else:
-            self.Cursor = Cursors.Default
-
-    def on_form_shown(self, sender, e):
-        # Set focus to the checklist or another control when the form is first shown
-        self.checklist.Focus()
-
-    def on_resize_mouse_up(self, sender, e):
-        self.isResizing = False
-
-    def close_button_clicked(self, sender, e):
-        self.Close()
-
-    def minimize_button_clicked(self, sender, e):
-        self.WindowState = FormWindowState.Minimized
-
-    def on_search_changed(self, sender, e):
-        searchText = self.searchBox.Text.lower()
-        if searchText == "search":  # Ignore if the text is the default "Search"
-            return
-
-        self.checklist.Items.Clear()
-        for schedule in self.allSchedules:
-            if searchText in schedule.Name.lower():
-                self.checklist.Items.Add(schedule.Name)
-    # Event handler for the 'Select All' checkbox
     def on_select_all_changed(self, sender, e):
-        # Check or uncheck all items in the checklist based on the checkbox state
-        for i in range(self.checklist.Items.Count):
-            self.checklist.SetItemChecked(i, self.selectAll.Checked)
+        for item in self.checklist.Items:
+            item.Checked = self.selectAll.Checked
 
     # Event handler for the export button
     def on_export_clicked(self, sender, e):
-        selectedSchedules = [self.checklist.Items[i] for i in range(self.checklist.Items.Count) if self.checklist.GetItemChecked(i)]
+        selectedSchedules = [item.Text for item in self.checklist.Items if item.Checked]
         if not selectedSchedules:
             MessageBox.Show("No schedules selected for export.", "Export", MessageBoxButtons.OK, MessageBoxIcon.Warning)
             return
@@ -337,10 +157,23 @@ class ScheduleListForm(Form):
 
         if folderBrowserDialog.ShowDialog() == DialogResult.OK:
             folderPath = folderBrowserDialog.SelectedPath
-            for schedule in selectedSchedules:
-                scheduleElement = [s for s in self.schedules if s.Name == schedule][0]
-                self.export_schedule(scheduleElement, folderPath)
+            existing_files = []
 
+            # Check for existing files
+            for scheduleName in selectedSchedules:
+                filePath = os.path.join(folderPath, "{}.csv".format(scheduleName))
+                if os.path.exists(filePath):
+                    existing_files.append(os.path.basename(filePath))
+
+            if existing_files:
+                if not self.confirm_overwrite(existing_files):
+                    return  # User chose not to overwrite
+
+            # Export schedules
+            for scheduleName in selectedSchedules:
+                scheduleElement = next((s for s in self.schedules if s.Name == scheduleName), None)
+                if scheduleElement:
+                    self.export_schedule(scheduleElement, folderPath)
             MessageBox.Show("Schedules exported successfully to {}".format(folderPath), "Export Successful", MessageBoxButtons.OK, MessageBoxIcon.Information)
 
     def export_schedule(self, schedule, folderPath):
@@ -369,6 +202,13 @@ class ScheduleListForm(Form):
                 # Check if the row contains any non-whitespace data
                 if not all(cell is None or cell.strip() == '' for cell in row):
                     writer.writerow(row)  # Write only rows with data
+
+    def confirm_overwrite(self, existing_files):
+        message = "The following files already exist in the selected folder:\n\n"
+        message += "\n".join(existing_files)
+        message += "\n\nDo you want to overwrite these files?"
+        result = MessageBox.Show(message, "Confirm Overwrite", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+        return result == DialogResult.Yes
                     
 # Function to retrieve all ViewSchedules from the Revit document
 def get_schedules(doc):
