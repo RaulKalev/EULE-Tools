@@ -46,10 +46,12 @@ class ScheduleListForm(Form):
         self.allSchedules = schedules
         # Constructor for the form
         appName = "Schedule Exporter"
-
+        # Set your custom minWidth and minHeight
+        customMinWidth = 500
+        customMinHeight = 400
         self.titleBar = TitleBar(self, appName, logo_image, minimize_image, close_image)
         self.searchBox = SearchBox(self, search_image, clear_image)
-        self.resizer = WindowResizer(self)
+        self.resizer = WindowResizer(self, customMinWidth, customMinHeight)
         
         # Set the title and size of the window
         self.FormBorderStyle = FormBorderStyle.None
@@ -59,8 +61,7 @@ class ScheduleListForm(Form):
         color1 = Color.FromArgb(24, 24, 24)
         colorText = Color.FromArgb(240,240,240)
         panelSize = 30
-        self.minWidth = 500
-        self.minHeight = 400
+
         self.BackColor = color1
         self.ForeColor = colorText        
 
@@ -76,7 +77,7 @@ class ScheduleListForm(Form):
         self.panel.BackColor = color3  # Match the form's background color
         self.panelBorder = Panel()
         self.panelBorder.Location = Point(15, panelSize + 45)
-        self.panelBorder.Size = Size(windowWidth-35, self.ClientSize.Height - (panelSize + 63))
+        self.panelBorder.Size = Size(windowWidth-35, self.ClientSize.Height - (panelSize + 68))
         self.panelBorder.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
         self.panelBorder.BackColor = colorText
         self.panelBorderLine = Panel()
