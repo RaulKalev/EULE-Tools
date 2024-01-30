@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 from System.Windows.Forms import FormWindowState, Cursors
-
 class WindowResizer:
-    def __init__(self, form):
+    def __init__(self, form, minWidth=500, minHeight=400):
         self.form = form
         self.resizeHandleSize = 10
-        self.minWidth = 500
-        self.minHeight = 400
+        self.minWidth = minWidth
+        self.minHeight = minHeight
 
         # Attach events
         form.Resize += self.on_form_resize
