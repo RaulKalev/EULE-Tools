@@ -1,8 +1,6 @@
 title:
   en_us: >-
-    FOV
-
     Magic
 tooltip:
-  en_us: Camera FOV drawing magic 
+  en_us: Sum Magic
 author: 'Raul Kalev'

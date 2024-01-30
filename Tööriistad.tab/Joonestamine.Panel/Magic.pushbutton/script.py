@@ -1,29 +1,31 @@
+# -*- coding: utf-8 -*-
 import clr
 import System
 clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
 clr.AddReference('System.Windows.Forms')
 clr.AddReference('System.Drawing')
-from Autodesk.Revit.DB import (XYZ, Line, Transaction, ViewDetailLevel, 
+from Autodesk.Revit.DB import (XYZ, Line, Transaction, ViewDetailLevel, RevitLinkInstance, 
                                ReferenceIntersector, FindReferenceTarget, FilledRegion, FilledRegionType, CurveLoop,
                                ElementCategoryFilter, BuiltInCategory, ViewFamilyType,
                                FilteredElementCollector, View3D, ElementId, Curve, CurveElement, ViewPlan)
 from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
-from System.Windows.Forms import Application, Form, Button, Label, TextBox, DialogResult, MessageBox, FormBorderStyle
+from System.Windows.Forms import Application, Form, Button, Label, TextBox, DialogResult, MessageBox, FormBorderStyle, RadioButton, ListBox
 from System.Drawing import Color, Size, Point, Bitmap, Font, FontStyle
 from math import radians, sin, cos
 from decimal import Decimal
 from Snippets._titlebar import TitleBar
 from Snippets._imagePath import ImagePathHelper
 from Snippets._windowResize import WindowResizer
+from Snippets._intersections import line_intersection,line_segment_intersection,find_closest_intersection,get_intersection_point
+from Snippets._fovCalculations import rotate_vector,calculate_fov_endpoints
 
 uidoc = __revit__.ActiveUIDocument
 doc = uidoc.Document
-
 # Instantiate ImagePathHelper
 image_helper = ImagePathHelper()
-windowWidth = 300 
-windowHeight = 205
+windowWidth = 280
+windowHeight = 255
 titleBar = 30
 
 # Load images using the get_image_path function
@@ -51,78 +53,7 @@ def select_cameras(uidoc):
             selected_cameras.append(doc.GetElement(ref.ElementId))
     except:
         pass
-        
-def line_intersection(line1, line2):
-    """
-    Calculate the intersection point of two infinite lines.
-    Returns the intersection point or None if there is no intersection.
-    """
-    p1, p2 = line1.GetEndPoint(0), line1.GetEndPoint(1)
-    p3, p4 = line2.GetEndPoint(0), line2.GetEndPoint(1)
-
-    def det(a, b):
-        return a.X * b.Y - a.Y * b.X
-
-    div = det(XYZ(p1.X - p2.X, p1.Y - p2.Y, 0), XYZ(p3.X - p4.X, p3.Y - p4.Y, 0))
-    if abs(div) < 1e-9:  # Lines are parallel or coincident
-        return None
-
-    d = XYZ(det(p1, p2), det(p3, p4), 0)
-    x = det(d, XYZ(p1.X - p2.X, p3.X - p4.X, 0)) / div
-    y = det(d, XYZ(p1.Y - p2.Y, p3.Y - p4.Y, 0)) / div
-
-    return XYZ(x, y, p1.Z) 
-  
-def rotate_vector(vector, angle_degrees, axis=XYZ(0, 0, 1)):
-    """
-    Rotates a vector around a given axis by a certain angle in degrees.
-    """
-    angle_radians = radians(angle_degrees)
-    cos_angle = cos(angle_radians)
-    sin_angle = sin(angle_radians)
-    x, y, z = vector.X, vector.Y, vector.Z
-    ux, uy, uz = axis.X, axis.Y, axis.Z
-    
-    # Rotation matrix components
-    rot_matrix00 = cos_angle + ux * ux * (1 - cos_angle)
-    rot_matrix01 = ux * uy * (1 - cos_angle) - uz * sin_angle
-    rot_matrix02 = ux * uz * (1 - cos_angle) + uy * sin_angle
-    
-    rot_matrix10 = uy * ux * (1 - cos_angle) + uz * sin_angle
-    rot_matrix11 = cos_angle + uy * uy * (1 - cos_angle)
-    rot_matrix12 = uy * uz * (1 - cos_angle) - ux * sin_angle
-    
-    rot_matrix20 = uz * ux * (1 - cos_angle) - uy * sin_angle
-    rot_matrix21 = uz * uy * (1 - cos_angle) + ux * sin_angle
-    rot_matrix22 = cos_angle + uz * uz * (1 - cos_angle)
-    
-    # Apply rotation
-    rotated_vector = XYZ(
-        rot_matrix00 * x + rot_matrix01 * y + rot_matrix02 * z,
-        rot_matrix10 * x + rot_matrix11 * y + rot_matrix12 * z,
-        rot_matrix20 * x + rot_matrix21 * y + rot_matrix22 * z
-    )
-    
-    return rotated_vector
-
-def calculate_fov_endpoints(camera_position, fov_angle, max_distance_mm, rotation_angle):
-    """
-    Calculate the endpoints of the FOV based on the camera position, FOV angle, distance, and rotation angle.
-    """
-    distance_feet = max_distance_mm / 304.8
-    half_fov = radians(fov_angle / 2)
-    base_left_direction = XYZ(-sin(half_fov), -cos(half_fov), 0)
-    base_right_direction = XYZ(sin(half_fov), -cos(half_fov), 0)
-
-    # Rotate the direction vectors
-    left_direction = rotate_vector(base_left_direction, rotation_angle)
-    right_direction = rotate_vector(base_right_direction, rotation_angle)
-
-    left_end = camera_position + left_direction.Multiply(distance_feet)
-    right_end = camera_position + right_direction.Multiply(distance_feet)
-
-    return (left_end, right_end)
-
+          
 def get_custom_detail_lines(doc, line_type_name):
     """
     Get all detail lines of a specific type in the project.
@@ -137,76 +68,6 @@ def get_custom_detail_lines(doc, line_type_name):
             if hasattr(line, 'GeometryCurve'):
                 custom_lines.append(line.GeometryCurve)
     return custom_lines
-
-def get_intersection_point(doc, origin, direction, view3D):
-    filter = ElementCategoryFilter(BuiltInCategory.OST_Walls)
-    intersector = ReferenceIntersector(filter, FindReferenceTarget.Element, view3D)
-    intersector.FindReferencesInRevitLinks = True
-
-    hits = intersector.Find(origin, direction)
-    if hits:
-        closest_hit = hits[0]
-        ref = closest_hit.GetReference()
-
-        # Check if the reference is in a linked model
-        if ref.GlobalPoint is not None:
-            # Transform the intersection point from the linked model's coordinate system to the host model's coordinate system
-            linked_instance = doc.GetElement(ref.ElementId)
-            if linked_instance is not None:
-                transform = linked_instance.GetTransform()
-                return transform.OfPoint(ref.GlobalPoint)
-
-        return None
-    else:
-        return None
-
-def line_segment_intersection(line1, line2, tolerance=0.0001):
-    """
-    Calculate the intersection point of two line segments.
-    Returns the intersection point or None if there is no intersection.
-    """
-    p1, p2 = line1.GetEndPoint(0), line1.GetEndPoint(1)
-    p3, p4 = line2.GetEndPoint(0), line2.GetEndPoint(1)
-
-    def det(a, b):
-        return a.X * b.Y - a.Y * b.X
-
-    def on_segment(p, q, r):
-        # Check if q lies within 'tolerance' of the line segment pr
-        if (min(p.X, r.X) - tolerance <= q.X <= max(p.X, r.X) + tolerance and 
-            min(p.Y, r.Y) - tolerance <= q.Y <= max(p.Y, r.Y) + tolerance):
-            return True
-        return False
-
-    d1 = det(p3 - p1, p2 - p1)
-    d2 = det(p4 - p1, p2 - p1)
-    d3 = det(p1 - p3, p4 - p3)
-    d4 = det(p2 - p3, p4 - p3)
-
-    if d1 * d2 < 0 and d3 * d4 < 0:
-        # Lines intersect, but need to check if the intersection point is within the line segments
-        intersection = line_intersection(Line.CreateBound(p1, p2), Line.CreateBound(p3, p4))
-        if intersection and on_segment(p1, intersection, p2) and on_segment(p3, intersection, p4):
-            return intersection
-
-    return None
-
-def find_closest_intersection(fov_line, detail_lines):
-    """
-    Find the closest intersection point of the fov_line with any of the detail_lines.
-    """
-    closest_point = None
-    min_distance = float('inf')
-
-    for detail_line in detail_lines:
-        intersection = line_segment_intersection(fov_line, detail_line)
-        if intersection:
-            distance = intersection.DistanceTo(fov_line.GetEndPoint(0))
-            if distance < min_distance:
-                min_distance = distance
-                closest_point = intersection
-
-    return closest_point
 
 def draw_line(doc, start_point, end_point):
     transaction = Transaction(doc, "Draw Line")
@@ -269,39 +130,59 @@ def simulate_camera_fov(doc, camera_position, fov_angle, max_distance_mm, detail
             trans.Commit()
 
 # Main script execution
-def main_script(camera, fov_angle, max_distance_mm, rotation_angle, detail_lines):
-    if camera is not None:
-        camera_position = camera.GetTransform().Origin
-        activeView = doc.ActiveView  # Get the active view from the document
-
-        if not isinstance(activeView, ViewPlan):
-            print("The active view is not a plan view. Please switch to a plan view to draw detail lines.")
-        else:
-            # Convert Decimal to float
-            fov_angle = float(fov_angle+1)
-            max_distance_mm = float(max_distance_mm)
-            rotation_angle = float(rotation_angle)
-
-            simulate_camera_fov(doc, camera_position, fov_angle, max_distance_mm, detail_lines, activeView, rotation_angle)
+def main_script(camera_info, fov_angle, max_distance_mm, rotation_angle, detail_lines):
+    camera_position, from_linked_file = camera_info
+    if from_linked_file:
+        # If camera is from a linked file, the position is already transformed
+        camera_position = camera_info[0]
     else:
-        print("Camera selection was cancelled or no camera was selected.")
+        # If camera is from the current project
+        camera_element = camera_info[0]
+        camera_position = camera_element.GetTransform().Origin
+    
+    activeView = doc.ActiveView  # Get the active view from the document
 
-# Initialize and run the application
+    if not isinstance(activeView, ViewPlan):
+        print("The active view is not a plan view. Please switch to a plan view to draw detail lines.")
+        return
+
+    # Convert Decimal to float
+    fov_angle = float(fov_angle)
+    max_distance_mm = float(max_distance_mm)
+    rotation_angle = float(rotation_angle)
+
+    simulate_camera_fov(doc, camera_position, fov_angle, max_distance_mm, detail_lines, activeView, rotation_angle)
+
+class RevitLinkSelectionFilter(ISelectionFilter):
+    """Selection filter to allow only Revit link instances."""
+    def AllowElement(self, elem):
+        return isinstance(elem, RevitLinkInstance)
+    
+class LinkedFileCameraSelectionFilter(ISelectionFilter):
+    def __init__(self, doc):
+        self.doc = doc
+
+    def AllowElement(self, elem):
+        # Allow any element from the linked file
+        if isinstance(self.doc.GetElement(elem), RevitLinkInstance):
+            return True
+        else:
+            return False
+
 class CameraFOVApp(Form):
     def __init__(self):
+        self.selected_link = None
         self.Text = "Camera FOV Configuration"
         self.Width = windowWidth
         self.Height = windowHeight
         appName = "FOV Magic"
-
+        self.TopMost = True
         # Set your custom minWidth and minHeight
         #customMinWidth = 300
         #customMinHeight = 205
-
         self.titleBar = TitleBar(self, appName, logo_image, minimize_image, close_image)
-
+        self.selected_cameras = []
         #self.resizer = WindowResizer(self, customMinWidth, customMinHeight)
-
         # Set the title and size of the window
         self.FormBorderStyle = FormBorderStyle.None
         self.Text = appName
@@ -314,11 +195,32 @@ class CameraFOVApp(Form):
         self.ForeColor = colorText  
 
         self.Controls.Add(self.titleBar)
+        #RadioButton Label
+        self.radioLabel = Label()
+        self.radioLabel.Text = "Camera location:"
+        self.radioLabel.Font = Font("Helvetica", 10, FontStyle.Regular)
+        self.radioLabel.Location = System.Drawing.Point(30,160)
+        self.radioLabel.Size = System.Drawing.Size(140,30)
+
+        # RadioButton for selecting cameras in the current project
+        self.radio_current_project = RadioButton()
+        self.radio_current_project.Text = "Current project"
+        self.radio_current_project.Location = System.Drawing.Point(30, 180)
+        self.radio_current_project.Size = System.Drawing.Size(140, 30)
+        self.radio_current_project.Checked = True  # Default to current project
+        self.Controls.Add(self.radio_current_project)
+
+        # RadioButton for selecting cameras from a linked file
+        self.radio_linked_file = RadioButton()
+        self.radio_linked_file.Text = "Linked file"
+        self.radio_linked_file.Location = System.Drawing.Point(30, 205)
+        self.Controls.Add(self.radio_linked_file)
 
         # Button for selecting camera
         self.select_camera_button = Button()
         self.select_camera_button.Text = "Select Camera"
-        self.select_camera_button.Location = System.Drawing.Point(100, titleBar+125)
+        self.select_camera_button.Location = System.Drawing.Point(170, titleBar+120)
+        self.select_camera_button.Size = System.Drawing.Size(80,40)
         self.select_camera_button.Click += self.select_camera
         self.Controls.Add(self.select_camera_button)
 
@@ -330,50 +232,97 @@ class CameraFOVApp(Form):
         # Run script button
         self.run_button = Button()
         self.run_button.Text = "Run Script"
-        self.run_button.Location = System.Drawing.Point(180, titleBar+125)
+        self.run_button.Location = System.Drawing.Point(170, titleBar+165)
+        self.run_button.Size = System.Drawing.Size(80,40)
         self.run_button.Click += self.run_script
         self.Controls.Add(self.run_button)
+        self.Controls.Add(self.radioLabel)
 
         # Handling form movement
         self.dragging = False
         self.offset = None
 
-    def create_label_and_textbox(self, label_text, y, name, default_value=""):
+    def create_label_and_textbox(self, label_text, y, name, default_value="", label_size=(120, 20), textbox_size=(200, 20), label_color=System.Drawing.Color.LightGray, textbox_color=System.Drawing.Color.White, text_color=System.Drawing.Color.Black):
         label = Label()
         label.Text = label_text
         label.Location = System.Drawing.Point(30, y)
+        label.Font = Font("Helvetica", 10, FontStyle.Regular)
+        label.Size = System.Drawing.Size(120,20)
+        label.ForeColor = Color.FromArgb(240,240,240)
         self.Controls.Add(label)
 
         textbox = TextBox()
         textbox.Location = System.Drawing.Point(150, y)
         textbox.Name = name
         textbox.Text = default_value
+        textbox.Font = Font(default_value, 9, FontStyle.Regular)  # Adjust the font size as needed
+        textbox.Size = System.Drawing.Size(100,20)
+        textbox.BackColor = Color.FromArgb(49, 49, 49)
+        textbox.ForeColor = Color.FromArgb(240,240,240)
         self.Controls.Add(textbox)
 
+
     def select_camera(self, sender, event):
-        select_cameras(uidoc)
-        if not selected_cameras:
-            MessageBox.Show("No cameras selected.")
-        self.Activate()  # Bring the window back into focus
+        if self.radio_current_project.Checked:
+            self.select_cameras_current_project()
+        elif self.radio_linked_file.Checked:
+            self.select_cameras_linked_file()
+
+    def select_cameras_current_project(self):
+        # Reset the selected cameras list
+        self.selected_cameras = []
+        try:
+            refs = uidoc.Selection.PickObjects(ObjectType.Element, "Please select cameras.")
+            for ref in refs:
+                self.selected_cameras.append(doc.GetElement(ref.ElementId))
+            self.Activate()  # Bring the window back into focus
+        except:
+            pass
+
+    def select_cameras_linked_file(self):
+        try:
+            selectedObjs = uidoc.Selection.PickObjects(ObjectType.LinkedElement, "Select Linked Elements")
+            self.selected_cameras = []  # Reset the list
+
+            for selectedObj in selectedObjs:
+                linkInstance = doc.GetElement(selectedObj.ElementId)  # Getting the RevitLinkInstance
+                linkedDoc = linkInstance.GetLinkDocument()  # Accessing the linked document
+                linkedCameraElement = linkedDoc.GetElement(selectedObj.LinkedElementId)  # Getting the element
+
+                transform = linkInstance.GetTransform()
+                transformedPosition = transform.OfPoint(linkedCameraElement.Location.Point)
+                self.selected_cameras.append((transformedPosition, True))  # Store the transformed position
+
+            MessageBox.Show("Cameras from linked file selected.")
+            self.Activate()
+        except Exception as e:
+            MessageBox.Show("An error occurred during camera selection: " + str(e))
+            self.Activate()
 
     def run_script(self, sender, event):
-        # Validate input and run script
         try:
-            fov_angle = Decimal(self.Controls["fov_angle"].Text)
-            rotation_angle_text = self.Controls["rotation_angle"].Text
-            rotation_angle = Decimal(rotation_angle_text) if rotation_angle_text != "" else 0
-            max_distance_m = Decimal(self.Controls["max_distance"].Text)
+            fov_angle = float(Decimal(self.Controls["fov_angle"].Text))
+            rotation_angle = float(Decimal(self.Controls["rotation_angle"].Text if self.Controls["rotation_angle"].Text != "" else "0"))
+            max_distance_m = float(Decimal(self.Controls["max_distance"].Text))
+            max_distance_mm = max_distance_m * 1000  # Convert from meters to millimeters
 
-            if selected_cameras and fov_angle and max_distance_m and (rotation_angle is not None):
-                max_distance_mm = max_distance_m * 1000  # Convert from meters to millimeters
-                custom_line_type_name = "Boundary"
-                detail_lines = get_custom_detail_lines(doc, custom_line_type_name)
-                for camera in selected_cameras:
-                    main_script(camera, fov_angle, max_distance_mm, rotation_angle, detail_lines)
-            else:
-                MessageBox.Show("Please fill all fields and select cameras.")
+            if self.radio_current_project.Checked:
+                if self.selected_cameras:
+                    detail_lines = get_custom_detail_lines(doc, "Boundary")
+                    for camera in self.selected_cameras:
+                        main_script((camera, False), fov_angle, max_distance_mm, rotation_angle, detail_lines)
+                else:
+                    MessageBox.Show("No cameras selected from the current project.")
+            elif self.radio_linked_file.Checked:
+                if self.selected_cameras:
+                    detail_lines = get_custom_detail_lines(doc, "Boundary")
+                    for camera_info in self.selected_cameras:
+                        main_script(camera_info, fov_angle, max_distance_mm, rotation_angle, detail_lines)
+                else:
+                    MessageBox.Show("No cameras selected from the linked file.")
         except Exception as e:
             MessageBox.Show("Invalid input: " + str(e))
+
 if __name__ == "__main__":
     Application.EnableVisualStyles()
     form = CameraFOVApp()
