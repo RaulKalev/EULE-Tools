@@ -43,7 +43,7 @@ class TitleBar(Panel):
         # Set title bar properties
         self.BackColor = Color.FromArgb(49, 49, 49)
         self.Dock = DockStyle.Top
-        self.Height = 30
+        self.Height = 40
         self.MouseDown += self.form_mouse_down
         self.MouseMove += self.form_mouse_move
         self.MouseUp += self.form_mouse_up
@@ -51,7 +51,7 @@ class TitleBar(Panel):
         # Create and add title label
         self.titleLabel = Label()
         self.titleLabel.Text = title
-        self.titleLabel.Font = Font("Helvetica", 10, FontStyle.Regular)  # Adjust the font size as needed
+        self.titleLabel.Font = Font("Helvetica", 11, FontStyle.Regular)  # Adjust the font size as needed
         self.titleLabel.TextAlign = ContentAlignment.MiddleCenter
         self.titleLabel.Dock = DockStyle.Fill
         self.titleLabel.MouseDown += self.form_mouse_down
@@ -61,24 +61,24 @@ class TitleBar(Panel):
         #Crate a line under title bar
         self.titleLine = Panel()
         self.titleLine.BackColor = Color.FromArgb(69,69,69)
-        self.titleLine.Location = Point(0,29)
+        self.titleLine.Location = Point(0,39)
 
         # Add logo
         self.logo = PictureBox()
         self.logo.Image = Bitmap(logo_image)
         self.logo.SizeMode = PictureBoxSizeMode.StretchImage
-        self.logo.Location = Point(10, 5)
-        self.logo.Size = Size(28, 20)
+        self.logo.Location = Point(10, 6)
+        self.logo.Size = Size(38, 28)
     
         # Add close button
         self.closeButton = self.create_button(close_image, self.on_close_clicked)
-        self.closeButton.Location = Point(self.windowWidth - 25, 5)
+        self.closeButton.Location = Point(self.windowWidth - 35, 5)
         self.exportButtonInteractive = InteractivePictureBox(
         self.closeButton, 'Close.png', 'CloseHover.png', 'CloseClick.png')
 
         # Add minimize button
         self.minimizeButton = self.create_button(minimize_image, self.on_minimize_clicked)
-        self.minimizeButton.Location = Point(self.windowWidth - 45, 5)
+        self.minimizeButton.Location = Point(self.windowWidth - 65, 5)
         self.exportButtonInteractive = InteractivePictureBox(
         self.minimizeButton, 'Minimize.png', 'MinimizeHover.png', 'MinimizeClick.png')
 
@@ -89,12 +89,11 @@ class TitleBar(Panel):
         self.Controls.Add(self.minimizeButton)
         self.Controls.Add(self.titleLabel)
         
-
     def create_button(self, image_path, click_event):
         button = PictureBox()
         button.Image = Bitmap(image_path)
         button.SizeMode = PictureBoxSizeMode.StretchImage
-        button.Size = Size(20, 20)
+        button.Size = Size(30, 30)
         button.Click += click_event
         return button
 
@@ -121,7 +120,7 @@ class TitleBar(Panel):
 
     def on_titlebar_resize(self, sender, e):
         # Update the position of the minimize and close buttons when the title bar is resized
-        self.closeButton.Location = Point(self.Width - 25, 5)
-        self.minimizeButton.Location = Point(self.Width - 45, 5)
+        self.closeButton.Location = Point(self.Width - 35, 5)
+        self.minimizeButton.Location = Point(self.Width - 65, 5)
         self.titleLine.Size = Size(self.Width, 1)
 
