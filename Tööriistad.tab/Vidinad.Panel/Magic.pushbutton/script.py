@@ -7,10 +7,10 @@ clr.AddReference('System.Windows.Forms')
 clr.AddReference('System.Drawing')
 from Autodesk.Revit.DB import (XYZ, Line, Transaction, ViewDetailLevel, RevitLinkInstance, 
                                ReferenceIntersector, FindReferenceTarget, FilledRegion, FilledRegionType, CurveLoop,
-                               ElementCategoryFilter, BuiltInCategory, ViewFamilyType,
+                               ElementCategoryFilter, BuiltInCategory, ViewFamilyType, ElementId,
                                FilteredElementCollector, View3D, ElementId, Curve, CurveElement, ViewPlan)
 from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
-from System.Windows.Forms import Application, Form, Button, Label, TextBox, DialogResult, MessageBox, FormBorderStyle, RadioButton, ListBox
+from System.Windows.Forms import Application, Form, Button, Label, TextBox, DialogResult, MessageBox, FormBorderStyle, RadioButton, ListBox, GroupBox, ComboBox, ComboBoxStyle
 from System.Drawing import Color, Size, Point, Bitmap, Font, FontStyle
 from math import radians, sin, cos
 from decimal import Decimal
@@ -25,7 +25,7 @@ doc = uidoc.Document
 # Instantiate ImagePathHelper
 image_helper = ImagePathHelper()
 windowWidth = 280
-windowHeight = 255
+windowHeight = 300
 titleBar = 30
 
 # Load images using the get_image_path function
@@ -229,6 +229,31 @@ class CameraFOVApp(Form):
         self.create_label_and_textbox("Rotation Angle:", 90, "rotation_angle", "90")
         self.create_label_and_textbox("Max Distance (m):", 120, "max_distance", "25")
 
+        # GroupBox for Preset Rotation Angles
+        self.rotation_angle_group = GroupBox()
+        self.rotation_angle_group.Text = "Preset Rotation Angles"
+        self.rotation_angle_group.ForeColor = colorText
+        self.rotation_angle_group.Location = Point(30, 240)  # Adjust location as needed
+        self.rotation_angle_group.Size = Size(220, 50)  # Adjust size as needed
+
+        # Radio Buttons for preset angles
+        self.radio_angles = {}
+        angles = [0, 90, 180, 270]
+        button_width = 50  # Width of each radio button, adjust as needed
+        for i, angle in enumerate(angles):
+            radio_button = RadioButton()
+            radio_button.Text = "{}°".format(angle)
+            radio_button.Location = Point(10 + i * (40 + 10), 20)  # Space them horizontally
+            radio_button.Size = Size(50, 20)  # Optional: Adjust size as needed
+            radio_button.Tag = angle  # Store the angle value for easy access
+            radio_button.CheckedChanged += self.on_angle_changed  # Event handler for change
+            if angle == 0:
+                radio_button.Checked = True  # Set 0° as the default selection
+            self.rotation_angle_group.Controls.Add(radio_button)
+            self.radio_angles[angle] = radio_button
+
+        self.Controls.Add(self.rotation_angle_group)
+
         # Run script button
         self.run_button = Button()
         self.run_button.Text = "Run Script"
@@ -261,6 +286,9 @@ class CameraFOVApp(Form):
         textbox.ForeColor = Color.FromArgb(240,240,240)
         self.Controls.Add(textbox)
 
+    def on_angle_changed(self, sender, event):
+        if sender.Checked:
+            self.additional_rotation_angle = sender.Tag  # Update the additional rotation angle based on the selected radio button
 
     def select_camera(self, sender, event):
         if self.radio_current_project.Checked:
@@ -303,6 +331,7 @@ class CameraFOVApp(Form):
         try:
             fov_angle = float(Decimal(self.Controls["fov_angle"].Text))
             rotation_angle = float(Decimal(self.Controls["rotation_angle"].Text if self.Controls["rotation_angle"].Text != "" else "0"))
+            rotation_angle += self.additional_rotation_angle
             max_distance_m = float(Decimal(self.Controls["max_distance"].Text))
             max_distance_mm = max_distance_m * 1000  # Convert from meters to millimeters
 
