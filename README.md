@@ -1,4 +1,4 @@
-![image](https://github.com/RaulKalev/EULE-Tools/assets/9610913/b7e467df-652a-436c-96d7-d320321b2474)Reviti tööriistad EULE meeskonnale
+Reviti tööriistad EULE meeskonnale
 
 
 1. Veendu et sul on pyrevit installitud.
@@ -21,3 +21,5 @@
             "dependencies": []
         }
 
+
+![image](https://github.com/RaulKalev/EULE-Tools/assets/9610913/b7e467df-652a-436c-96d7-d320321b2474)
