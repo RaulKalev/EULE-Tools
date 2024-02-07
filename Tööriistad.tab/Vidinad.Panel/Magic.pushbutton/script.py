@@ -7,7 +7,7 @@ clr.AddReference('System.Windows.Forms')
 clr.AddReference('System.Drawing')
 from Autodesk.Revit.DB import (XYZ, Line, Transaction, ViewDetailLevel, RevitLinkInstance, 
                                ReferenceIntersector, FindReferenceTarget, FilledRegion, FilledRegionType, CurveLoop,
-                               ElementCategoryFilter, BuiltInCategory, ViewFamilyType, ElementId,
+                               ElementCategoryFilter, BuiltInCategory, ViewFamilyType, ElementId, Element,
                                FilteredElementCollector, View3D, ElementId, Curve, CurveElement, ViewPlan)
 from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
 from System.Windows.Forms import Application, Form, Button, Label, TextBox, DialogResult, MessageBox, FormBorderStyle, RadioButton, ListBox, GroupBox, ComboBox, ComboBoxStyle
@@ -25,7 +25,7 @@ doc = uidoc.Document
 # Instantiate ImagePathHelper
 image_helper = ImagePathHelper()
 windowWidth = 280
-windowHeight = 300
+windowHeight = 345
 titleBar = 30
 
 # Load images using the get_image_path function
@@ -39,6 +39,12 @@ minimize_image = Bitmap(minimize_image_path)
 close_image = Bitmap(close_image_path)
 clear_image = Bitmap(clear_image_path)
 logo_image = Bitmap(logo_image_path)
+
+def list_filled_region_type_names_and_ids(doc):
+    """Lists all Filled Region Type names and their IDs in the document."""
+    f_region_types = FilteredElementCollector(doc).OfClass(FilledRegionType)
+    names_ids = [(Element.Name.GetValue(fregion_type), fregion_type.Id) for fregion_type in f_region_types]
+    return names_ids
 
 class DetailLineFilter(ISelectionFilter):
     def AllowElement(self, elem):
@@ -80,7 +86,7 @@ def draw_line(doc, start_point, end_point):
         print("Error: " + str(e))
         transaction.RollBack()
 
-def simulate_camera_fov(doc, camera_position, fov_angle, max_distance_mm, detail_lines, activeView, rotation_angle=0):
+def simulate_camera_fov(doc, camera_position, fov_angle, max_distance_mm, detail_lines, activeView, rotation_angle=0, filled_region_type_id=None):
     """
     Simulate the field of view for a camera and create a filled region in the active view.
     """
@@ -117,11 +123,12 @@ def simulate_camera_fov(doc, camera_position, fov_angle, max_distance_mm, detail
                 end_point = filled_region_points[(i + 1) % len(filled_region_points)]
                 curve_loop.Append(Line.CreateBound(start_point, end_point))
 
-            # Find a filled region type (use the first one available)
-            filled_region_types = FilteredElementCollector(doc).OfClass(FilledRegionType)
-            filled_region_type_id = filled_region_types.FirstElementId()
-
-            # Create the filled region
+            if filled_region_type_id is None:
+                # Optionally, find a default filled region type ID as a fallback
+                filled_region_types = FilteredElementCollector(doc).OfClass(FilledRegionType)
+                filled_region_type_id = filled_region_types.FirstElementId()
+            
+            # Create the filled region using the specified filled region type ID
             FilledRegion.Create(doc, filled_region_type_id, activeView.Id, [curve_loop])
         except Exception as e:
             print("Error: " + str(e))
@@ -130,7 +137,7 @@ def simulate_camera_fov(doc, camera_position, fov_angle, max_distance_mm, detail
             trans.Commit()
 
 # Main script execution
-def main_script(camera_info, fov_angle, max_distance_mm, rotation_angle, detail_lines):
+def main_script(camera_info, fov_angle, max_distance_mm, rotation_angle, detail_lines, filled_region_type_id):
     camera_position, from_linked_file = camera_info
     if from_linked_file:
         # If camera is from a linked file, the position is already transformed
@@ -151,7 +158,7 @@ def main_script(camera_info, fov_angle, max_distance_mm, rotation_angle, detail_
     max_distance_mm = float(max_distance_mm)
     rotation_angle = float(rotation_angle)
 
-    simulate_camera_fov(doc, camera_position, fov_angle, max_distance_mm, detail_lines, activeView, rotation_angle)
+    simulate_camera_fov(doc, camera_position, fov_angle, max_distance_mm, detail_lines, activeView, rotation_angle, filled_region_type_id)
 
 class RevitLinkSelectionFilter(ISelectionFilter):
     """Selection filter to allow only Revit link instances."""
@@ -228,6 +235,18 @@ class CameraFOVApp(Form):
         self.create_label_and_textbox("FOV Angle:", 60, "fov_angle", "55")
         self.create_label_and_textbox("Rotation Angle:", 90, "rotation_angle", "90")
         self.create_label_and_textbox("Max Distance (m):", 120, "max_distance", "25")
+
+        # ComboBox for filled region type selection
+        self.filledRegionTypeComboBox = ComboBox()
+        self.filledRegionTypeComboBox.DropDownStyle = ComboBoxStyle.DropDownList
+        self.filledRegionTypeComboBox.Location = Point(30, 300)
+        self.filledRegionTypeComboBox.Width = 220
+        filled_region_types = list_filled_region_type_names_and_ids(doc)
+        for name, _ in filled_region_types:
+            self.filledRegionTypeComboBox.Items.Add(name)
+        if filled_region_types:
+            self.filledRegionTypeComboBox.SelectedIndex = 0
+        self.Controls.Add(self.filledRegionTypeComboBox)
 
         # GroupBox for Preset Rotation Angles
         self.rotation_angle_group = GroupBox()
@@ -328,6 +347,7 @@ class CameraFOVApp(Form):
             self.Activate()
 
     def run_script(self, sender, event):
+
         try:
             fov_angle = float(Decimal(self.Controls["fov_angle"].Text))
             rotation_angle = float(Decimal(self.Controls["rotation_angle"].Text if self.Controls["rotation_angle"].Text != "" else "0"))
@@ -335,23 +355,28 @@ class CameraFOVApp(Form):
             max_distance_m = float(Decimal(self.Controls["max_distance"].Text))
             max_distance_mm = max_distance_m * 1000  # Convert from meters to millimeters
 
-            if self.radio_current_project.Checked:
-                if self.selected_cameras:
-                    detail_lines = get_custom_detail_lines(doc, "Boundary")
+            selected_filled_region_name = self.filledRegionTypeComboBox.SelectedItem.ToString()
+            selected_filled_region_id = None
+            for name, id in list_filled_region_type_names_and_ids(doc):
+                if name == selected_filled_region_name:
+                    selected_filled_region_id = id
+                    break
+
+            if selected_filled_region_id is not None:
+                detail_lines = get_custom_detail_lines(doc, "Boundary")
+                if self.radio_current_project.Checked and self.selected_cameras:
                     for camera in self.selected_cameras:
-                        main_script((camera, False), fov_angle, max_distance_mm, rotation_angle, detail_lines)
-                else:
-                    MessageBox.Show("No cameras selected from the current project.")
-            elif self.radio_linked_file.Checked:
-                if self.selected_cameras:
-                    detail_lines = get_custom_detail_lines(doc, "Boundary")
+                        # Ensure this call includes all six arguments
+                        main_script((camera, False), fov_angle, max_distance_mm, rotation_angle, detail_lines, selected_filled_region_id)
+                elif self.radio_linked_file.Checked and self.selected_cameras:
                     for camera_info in self.selected_cameras:
-                        main_script(camera_info, fov_angle, max_distance_mm, rotation_angle, detail_lines)
-                else:
-                    MessageBox.Show("No cameras selected from the linked file.")
+                        # Ensure this call includes all six arguments
+                        main_script(camera_info, fov_angle, max_distance_mm, rotation_angle, detail_lines, selected_filled_region_id)
+            else:
+                MessageBox.Show("Selected filled region type not found.")
         except Exception as e:
             MessageBox.Show("Invalid input: " + str(e))
-
+        
 if __name__ == "__main__":
     Application.EnableVisualStyles()
     form = CameraFOVApp()
