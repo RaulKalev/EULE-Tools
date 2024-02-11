@@ -1,6 +1,8 @@
 title:
   en_us: >-
-    Magic
+    Draw
+
+    FOV
 tooltip:
-  en_us: Sum Magic
+  en_us: Calculate and draw the fov of selected camera(s). Make sure to create a detail line type "Boundary" and draw it around the walls that you'd like the fov to clash with.
 author: 'Raul Kalev'
