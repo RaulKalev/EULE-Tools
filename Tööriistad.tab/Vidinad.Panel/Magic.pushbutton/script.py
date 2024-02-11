@@ -10,8 +10,8 @@ from Autodesk.Revit.DB import (XYZ, Line, Transaction, ViewDetailLevel, RevitLin
                                ElementCategoryFilter, BuiltInCategory, ViewFamilyType, ElementId, Element,
                                FilteredElementCollector, View3D, ElementId, Curve, CurveElement, ViewPlan)
 from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
-from System.Windows.Forms import Application, Form, Button, Label, TextBox, Timer, Cursors, DialogResult, MessageBox, FormBorderStyle, BorderStyle, RadioButton, ListBox, GroupBox, ComboBox, ComboBoxStyle, AnchorStyles, Panel, PictureBoxSizeMode, PictureBox, ToolTip
-from System.Drawing import Color, Size, Point, Bitmap, Font, FontStyle
+from System.Windows.Forms import Application, Form, Button, Label, TextBox, Timer, Cursors, DrawMode, DialogResult,FormWindowState, MessageBox, FormBorderStyle, BorderStyle, RadioButton, ListBox, GroupBox, ComboBox, ComboBoxStyle, AnchorStyles, Panel, PictureBoxSizeMode, PictureBox, ToolTip,FormStartPosition
+from System.Drawing import Color, Size, Point, Bitmap, Font, FontStyle,ContentAlignment,StringFormat
 from math import radians, sin, cos
 from decimal import Decimal
 from Snippets._titlebar import TitleBar
@@ -20,14 +20,17 @@ from Snippets._windowResize import WindowResizer
 from Snippets._interactivePictureBox import InteractivePictureBox
 from Snippets._intersections import line_intersection,line_segment_intersection,find_closest_intersection,get_intersection_point
 from Snippets._fovCalculations import rotate_vector,calculate_fov_endpoints
+from Scripts._advancedCamera import calculator_1
+from Snippets._revitUtilities import list_filled_region_type_names_and_ids,get_custom_detail_lines,draw_line,simulate_camera_fov,select_cameras
 
 uidoc = __revit__.ActiveUIDocument
 doc = uidoc.Document
+
 # Instantiate ImagePathHelper
 image_helper = ImagePathHelper()
 windowWidth = 280
-windowHeight = 345
-titleBar = 30
+windowHeight = 570
+titleBar = 40
 
 # Load images using the get_image_path function
 minimize_image_path = image_helper.get_image_path('Minimize.png')
@@ -49,91 +52,9 @@ select_image = Bitmap(select_image_path)
 expand_image = Bitmap(expand_image_path)
 contract_image = Bitmap(contract_image_path)
 
-def list_filled_region_type_names_and_ids(doc):
-    f_region_types = FilteredElementCollector(doc).OfClass(FilledRegionType)
-    names_ids = [(Element.Name.GetValue(fregion_type), fregion_type.Id) for fregion_type in f_region_types]
-    return names_ids
-
 class DetailLineFilter(ISelectionFilter):
     def AllowElement(self, elem):
         return elem.Category.Id.IntegerValue == int(BuiltInCategory.OST_Lines)
-
-def select_cameras(uidoc):
-    global selected_cameras
-    selected_cameras = []
-    try:
-        refs = uidoc.Selection.PickObjects(ObjectType.Element, "Please select cameras.")
-        for ref in refs:
-            selected_cameras.append(doc.GetElement(ref.ElementId))
-    except:
-        pass
-          
-def get_custom_detail_lines(doc, line_type_name):
-    custom_lines = []
-    collector = FilteredElementCollector(doc).OfClass(CurveElement).WhereElementIsNotElementType()
-    for line in collector:
-        if line.LineStyle.Name == line_type_name:
-            if hasattr(line, 'GeometryCurve'):
-                custom_lines.append(line.GeometryCurve)
-    return custom_lines
-
-def draw_line(doc, start_point, end_point):
-    transaction = Transaction(doc, "Draw Line")
-    transaction.Start()
-    try:
-        line = Line.CreateBound(start_point, end_point)
-        doc.Create.NewDetailCurve(doc.ActiveView, line)
-        transaction.Commit()
-    except Exception as e:
-        print("Error: " + str(e))
-        transaction.RollBack()
-
-def simulate_camera_fov(doc, camera_position, fov_angle, max_distance_mm, detail_lines, activeView, rotation_angle=0, filled_region_type_id=None):
-    # Calculate the rotated FOV endpoints
-    left_end, right_end = calculate_fov_endpoints(camera_position, fov_angle, max_distance_mm, rotation_angle)
-
-    # Initialize list to store the boundary points for the filled region
-    filled_region_points = [camera_position]
-
-    with Transaction(doc, "Create FOV Filled Region") as trans:
-        trans.Start()
-        try:
-            # Iterate through the FOV angles
-            for angle in range(0, int(fov_angle), 1):
-                # Calculate the direction for the current angle with rotation
-                current_angle = radians(-fov_angle/2 + angle + rotation_angle)
-                direction = XYZ(sin(current_angle), -cos(current_angle), 0).Normalize()
-
-                # Create a line in the FOV direction with a defined length
-                end_point = camera_position + direction.Multiply(max_distance_mm / 304.8)
-                fov_line = Line.CreateBound(camera_position, end_point)
-                
-                # Find the intersection with detail lines or use the endpoint if no intersection
-                intersection_point = find_closest_intersection(fov_line, detail_lines)
-                final_point = intersection_point if intersection_point is not None else end_point
-
-                # Add the final point to the list for the filled region
-                filled_region_points.append(final_point)
-
-            # Create a CurveLoop for the filled region
-            curve_loop = CurveLoop()
-            for i in range(len(filled_region_points)):
-                start_point = filled_region_points[i]
-                end_point = filled_region_points[(i + 1) % len(filled_region_points)]
-                curve_loop.Append(Line.CreateBound(start_point, end_point))
-
-            if filled_region_type_id is None:
-                # Optionally, find a default filled region type ID as a fallback
-                filled_region_types = FilteredElementCollector(doc).OfClass(FilledRegionType)
-                filled_region_type_id = filled_region_types.FirstElementId()
-            
-            # Create the filled region using the specified filled region type ID
-            FilledRegion.Create(doc, filled_region_type_id, activeView.Id, [curve_loop])
-        except Exception as e:
-            print("Error: " + str(e))
-            trans.RollBack()
-        else:
-            trans.Commit()
 
 # Main script execution
 def main_script(camera_info, fov_angle, max_distance_mm, rotation_angle, detail_lines, filled_region_type_id):
@@ -177,6 +98,9 @@ class LinkedFileCameraSelectionFilter(ISelectionFilter):
 
 class CameraFOVApp(Form):
     def __init__(self):
+        self.setupCameraSelectionGroup()
+        self.StartPosition = FormStartPosition.Manual  # Set start position to Manual
+        self.Location = Point(400, 200)  # Set the start location of the form
         self.selected_link = None
         self.Text = "Camera FOV Configuration"
         self.Width = windowWidth
@@ -194,97 +118,97 @@ class CameraFOVApp(Form):
         panelSize = 30
         self.BackColor = color1
         self.ForeColor = colorText  
-        self.expanded_width = 480  # Target expanded width
+        self.expanded_width = 580  # Target expanded width
         self.original_width = 280  # Original width
         self.is_expanding = False  # Track direction of animation
 
         self.Controls.Add(self.titleBar)
-        #RadioButton Label
-        self.radioLabel = Label()
-        self.radioLabel.Text = "Camera location:"
-        self.radioLabel.Font = Font("Helvetica", 10, FontStyle.Regular)
-        self.radioLabel.Location = System.Drawing.Point(30,160)
-        self.radioLabel.Size = System.Drawing.Size(140,30)
-
-        # RadioButton for selecting cameras in the current project
-        self.radio_current_project = RadioButton()
-        self.radio_current_project.Text = "Current project"
-        self.radio_current_project.Location = System.Drawing.Point(30, 180)
-        self.radio_current_project.Size = System.Drawing.Size(140, 30)
-        self.radio_current_project.Checked = True  # Default to current project
-        self.Controls.Add(self.radio_current_project)
-
-        # RadioButton for selecting cameras from a linked file
-        self.radio_linked_file = RadioButton()
-        self.radio_linked_file.Text = "Linked file"
-        self.radio_linked_file.Location = System.Drawing.Point(30, 205)
-        self.Controls.Add(self.radio_linked_file)
-
-        # Button for selecting camera
-        self.select_camera_button = PictureBox()
-        self.select_camera_button.Location = System.Drawing.Point(170, titleBar+118)
-        self.select_camera_button.Size = System.Drawing.Size(80,40)
-        self.select_camera_button.SizeMode = PictureBoxSizeMode.StretchImage
-        self.select_camera_button.Click += self.select_camera
-        self.select_camera_buttonInteractive = InteractivePictureBox(
-        self.select_camera_button, 'Select.png', 'SelectHover.png', 'SelectClick.png')
-        self.Controls.Add(self.select_camera_button)
 
         # Labels and TextBoxes for user input with default values
-        self.create_label_and_textbox("FOV Angle:", 60, "fov_angle", "55")
-        self.create_label_and_textbox("Rotation Angle:", 90, "rotation_angle", "90")
-        self.create_label_and_textbox("Max Distance (m):", 120, "max_distance", "25")
+        self.create_label_and_textbox("FOV Angle:", 78, "fov_angle", "55")
+        self.create_label_and_textbox("Horizontal Resolution:", 108, "horizontal_resolution", "2560")
+        self.create_label_and_textbox("Max Distance (m):", 138, "max_distance", "0")
+
+        self.border1 = Panel()
+        self.border1.Location = Point(30,365)
+        self.border1.Size = Size(220,2)
+        self.border1.BackColor = Color.FromArgb(49, 49, 49)
+        self.border2 = Panel()
+        self.border2.Location = Point(30,384)
+        self.border2.Size = Size(220,2)
+        self.border2.BackColor = Color.FromArgb(49, 49, 49)
+        self.border3 = Panel()
+        self.border3.Location = Point(30,365)
+        self.border3.Size = Size(2,20)
+        self.border3.BackColor = Color.FromArgb(49, 49, 49)
+        self.border4 = Panel()
+        self.border4.Location = Point(231,365)
+        self.border4.Size = Size(19,20)
+        self.border4.BackColor = Color.FromArgb(49, 49, 49)
+        self.border5 = Panel()
+        self.border5.Location = Point((30-1),(365-1))
+        self.border5.Size = Size(222,23)
+        self.border5.BackColor = Color.FromArgb(69, 69, 69)
+        
+        self.Controls.Add(self.border2)
+        self.Controls.Add(self.border1)
+        self.Controls.Add(self.border3)
+        self.Controls.Add(self.border4)
 
         # ComboBox for filled region type selection
         self.filledRegionTypeComboBox = ComboBox()
         self.filledRegionTypeComboBox.DropDownStyle = ComboBoxStyle.DropDownList
-        self.filledRegionTypeComboBox.Location = Point(30, 300)
+        self.filledRegionTypeComboBox.Location = Point(30, 365)
         self.filledRegionTypeComboBox.Width = 220
+        self.filledRegionTypeComboBox.BackColor = Color.FromArgb(49, 49, 49)  # Example color
+        self.filledRegionTypeComboBox.ForeColor = Color.FromArgb(240, 240, 240)  # Example text color
+        self.filledRegionTypeComboBox.DrawMode = DrawMode.OwnerDrawFixed
+        self.filledRegionTypeComboBox.DrawItem += self.draw_combo_item
+
         filled_region_types = list_filled_region_type_names_and_ids(doc)
         for name, _ in filled_region_types:
             self.filledRegionTypeComboBox.Items.Add(name)
         if filled_region_types:
             self.filledRegionTypeComboBox.SelectedIndex = 0
         self.Controls.Add(self.filledRegionTypeComboBox)
-
-        # GroupBox for Preset Rotation Angles
-        self.rotation_angle_group = GroupBox()
-        self.rotation_angle_group.Text = "Preset Rotation Angles"
-        self.rotation_angle_group.ForeColor = colorText
-        self.rotation_angle_group.Location = Point(30, 240)  # Adjust location as needed
-        self.rotation_angle_group.Size = Size(220, 50)  # Adjust size as needed
-
-        # Radio Buttons for preset angles
-        self.radio_angles = {}
-        angles = [0, 90, 180, 270]
-        button_width = 50  # Width of each radio button, adjust as needed
-        for i, angle in enumerate(angles):
-            radio_button = RadioButton()
-            radio_button.Text = "{}°".format(angle)
-            radio_button.Location = Point(10 + i * (40 + 10), 20)  # Space them horizontally
-            radio_button.Size = Size(50, 20)  # Optional: Adjust size as needed
-            radio_button.Tag = angle  # Store the angle value for easy access
-            radio_button.CheckedChanged += self.on_angle_changed  # Event handler for change
-            if angle == 0:
-                radio_button.Checked = True  # Set 0° as the default selection
-            self.rotation_angle_group.Controls.Add(radio_button)
-            self.radio_angles[angle] = radio_button
-
-        self.Controls.Add(self.rotation_angle_group)
+        self.Controls.Add(self.border5)
 
         # Run script button
         self.run_button = PictureBox()
         self.run_button.Image = run_image
-        self.run_button.Location = System.Drawing.Point(170, titleBar+165)
+        self.run_button.Location = System.Drawing.Point(170, titleBar+420)
         self.run_button.Size = System.Drawing.Size(80,40)
         self.run_button.SizeMode = PictureBoxSizeMode.StretchImage
         self.run_button.Click += self.run_script
         self.run_buttonInteractive = InteractivePictureBox(
         self.run_button, 'Run.png', 'RunHover.png', 'RunClick.png')
         self.Controls.Add(self.run_button)
-        self.Controls.Add(self.radioLabel)
+        self.AddDORIRadioButtons()
+        self.setupRotationAngleControls()
 
-        # Add to CameraFOVApp.__init__
+    #Groups
+        #Group1
+        border1Text = Label()
+        border1Text.AutoSize = False
+        border1Text.TextAlign = ContentAlignment.MiddleLeft
+        border1Text.Text = "Camera Parameters:"
+        border1Text.Font = Font("Helvetica", 8, FontStyle.Regular)
+        border1Text.Location = System.Drawing.Point(20,titleBar+10)
+        border1Text.Size = System.Drawing.Size(106,10)
+        border1Text.BackColor = Color.Transparent
+        border1 = Panel()
+        border1.Location = System.Drawing.Point(20,titleBar+20)
+        border1.Size = System.Drawing.Size(windowWidth-40,110)#bottom=130
+        border1.BackColor = Color.FromArgb(69,69,69)
+        panel1 = Panel()
+        panel1.Location = System.Drawing.Point(21,titleBar+21)
+        panel1.Size = System.Drawing.Size(windowWidth-42,108)
+        panel1.BackColor = Color.FromArgb(24,24,24)
+        self.Controls.Add(border1Text)
+        self.Controls.Add(panel1)
+        self.Controls.Add(border1)
+        ##############################
+
         self.expand_button = PictureBox()
         self.expand_button.Image = expand_image
         self.expand_button.Location = Point(self.Width - 35, self.Height - 60)  # Adjust as necessary
@@ -300,15 +224,6 @@ class CameraFOVApp(Form):
         self.animation_timer.Interval = 10  # Milliseconds between ticks, adjust for speed
         self.animation_timer.Tick += self.animate_resize
 
-        self.secretText = Label()
-        self.secretText.Text = "Congrats! You found the secret menu"
-        self.secretText.ForeColor = colorText
-        self.secretText.BackColor = color1
-        self.secretText.Font = Font("Helvetica", 18, FontStyle.Regular)
-        self.secretText.Location = Point(290, 100)
-        self.secretText.Size = Size (200,200)
-        self.Controls.Add(self.secretText)
-
         # Handling form movement
         self.dragging = False
         self.offset = None
@@ -321,12 +236,17 @@ class CameraFOVApp(Form):
         self.toolTip.SetToolTip(self.radio_linked_file, "Cameras are located in a linked file")
         self.toolTip.SetToolTip(self.expand_button, "Advanced features")
 
+    def draw_combo_item(self, sender, e):
+        e.DrawBackground()
+        e.Graphics.DrawString(self.filledRegionTypeComboBox.Items[e.Index].ToString(),
+                            e.Font, System.Drawing.Brushes.White, e.Bounds, StringFormat.GenericDefault)
+        e.DrawFocusRectangle()
     def create_label_and_textbox(self, label_text, y, name, default_value="", label_size=(120, 20), textbox_size=(200, 20), label_color=System.Drawing.Color.LightGray, textbox_color=System.Drawing.Color.White, text_color=System.Drawing.Color.Black):
         label = Label()
         label.Text = label_text
-        label.Location = System.Drawing.Point(30, y)
+        label.Location = System.Drawing.Point(30, (y-3))
         label.Font = Font("Helvetica", 10, FontStyle.Regular)
-        label.Size = System.Drawing.Size(120,20)
+        label.Size = System.Drawing.Size(150,20)
         label.ForeColor = Color.FromArgb(240,240,240)
         
         textbox = TextBox()
@@ -339,23 +259,157 @@ class CameraFOVApp(Form):
         textbox.ForeColor = Color.FromArgb(240,240,240)
         textbox.BorderStyle = BorderStyle.None
 
-        border = Panel()
-        border.Location = System.Drawing.Point(169, (y-3))
-        border.Size = System.Drawing.Size(81,20)
-        border.BackColor = Color.FromArgb(69,69,69)
-        border.Anchor = AnchorStyles.Top | AnchorStyles.Left
+        boxBorder = Panel()
+        boxBorder.Location = System.Drawing.Point(169, (y-3))
+        boxBorder.Size = System.Drawing.Size(81,20)
+        boxBorder.BackColor = Color.FromArgb(69,69,69)
+        boxBorder.Anchor = AnchorStyles.Top | AnchorStyles.Left
 
-        cover = Panel()
-        cover.Location = System.Drawing.Point(170, (y-2))
-        cover.Size = System.Drawing.Size(79,18)
-        cover.BackColor = Color.FromArgb(49, 49, 49)
-        cover.Anchor = AnchorStyles.Top | AnchorStyles.Left
-      
+        boxCover = Panel()
+        boxCover.Location = System.Drawing.Point(170, (y-2))
+        boxCover.Size = System.Drawing.Size(79,18)
+        boxCover.BackColor = Color.FromArgb(49, 49, 49)
+        boxCover.Anchor = AnchorStyles.Top | AnchorStyles.Left
+     
         self.Controls.Add(textbox)
-        self.Controls.Add(label) 
-        self.Controls.Add(cover)
-        self.Controls.Add(border)
+        self.Controls.Add(boxCover)
+        self.Controls.Add(boxBorder)
+        self.Controls.Add(label)
+    def setupRotationAngleControls(self):
+        border3Text = Label()
+        border3Text.AutoSize = False
+        border3Text.TextAlign = ContentAlignment.MiddleLeft
+        border3Text.Text = "Camera Rotation:"
+        border3Text.Font = Font("Helvetica", 8, FontStyle.Regular)
+        border3Text.Location = System.Drawing.Point(20, titleBar+232)
+        border3Text.Size = System.Drawing.Size(106, 10)
+        border3Text.BackColor = Color.Transparent
 
+        border3 = Panel()
+        border3.Location = System.Drawing.Point(20, titleBar+242)
+        border3.Size = System.Drawing.Size(windowWidth-40, 122)
+        border3.BackColor = Color.FromArgb(69,69,69)
+
+        panel3 = Panel()
+        panel3.Location = System.Drawing.Point(21, titleBar+243)
+        panel3.Size = System.Drawing.Size(windowWidth-42, 120)
+        panel3.BackColor = Color.FromArgb(24,24,24)
+
+        rotationAngleLabel = Label()
+        rotationAngleLabel.Text = "Rotation Angle:"
+        rotationAngleLabel.Font = Font("Helvetica", 10, FontStyle.Regular)
+        rotationAngleLabel.Location = Point(30, 297)  # Adjust location as needed
+        rotationAngleLabel.Size = Size(120, 20)  # Adjust size as needed
+        rotationAngleLabel.ForeColor = Color.FromArgb(240, 240, 240)
+        self.Controls.Add(rotationAngleLabel)
+        
+        # Textbox for Rotation Angle
+        rotationAngleTextBox = TextBox()
+        rotationAngleTextBox.Name = "rotation_angle"
+        rotationAngleTextBox.Text = "90"  # Default value
+        rotationAngleTextBox.Location = Point(172, 300)  # Adjust location to align with the label
+        rotationAngleTextBox.Size = Size(75, 20)  # Adjust size as needed
+        rotationAngleTextBox.BackColor = Color.FromArgb(49, 49, 49)
+        rotationAngleTextBox.ForeColor = Color.FromArgb(240, 240, 240)
+        rotationAngleTextBox.BorderStyle = BorderStyle.None
+        self.Controls.Add(rotationAngleTextBox)
+
+        rotoBoxBorder = Panel()
+        rotoBoxBorder.Location = System.Drawing.Point(169, (300-3))
+        rotoBoxBorder.Size = System.Drawing.Size(81,20)
+        rotoBoxBorder.BackColor = Color.FromArgb(69,69,69)
+        rotoBoxBorder.Anchor = AnchorStyles.Top | AnchorStyles.Left
+
+        rotoBoxCover = Panel()
+        rotoBoxCover.Location = System.Drawing.Point(170, (300-2))
+        rotoBoxCover.Size = System.Drawing.Size(79,18)
+        rotoBoxCover.BackColor = Color.FromArgb(49, 49, 49)
+        rotoBoxCover.Anchor = AnchorStyles.Top | AnchorStyles.Left
+        self.Controls.Add(rotoBoxCover)
+        self.Controls.Add(rotoBoxBorder)
+
+        # Create a panel to hold the radio buttons
+        angleSelectionPanel = Panel()
+        angleSelectionPanel.Location = Point(30, 330)  # Adjust location as needed
+        angleSelectionPanel.Size = Size(220, 20)  # Adjust size to fit the radio buttons
+
+        angles = [0, 90, 180, 270]
+        self.radio_angles = {}
+
+        for i, angle in enumerate(angles):
+            radio_button = RadioButton()
+            radio_button.Text = "{}°".format(angle)
+            radio_button.Font = Font("Helvetica", 8, FontStyle.Regular)
+            radio_button.Location = Point(10 + i * (40 + 14), 0)  # Adjust spacing as needed
+            radio_button.Size = Size(50, 20)
+            radio_button.ForeColor = Color.FromArgb(240, 240, 240)  # Adjust text color as needed
+            radio_button.Tag = angle
+            radio_button.CheckedChanged += self.on_angle_changed  # Attach the event handler
+            if angle == 0:
+                radio_button.Checked = True  # Default selection
+
+            # Add each radio button to the panel instead of the form
+            angleSelectionPanel.Controls.Add(radio_button)
+            self.radio_angles[angle] = radio_button
+
+        # Add the panel to the form
+        self.Controls.Add(angleSelectionPanel)
+        self.Controls.Add(border3Text)
+        self.Controls.Add(panel3)
+        self.Controls.Add(border3)
+    def setupCameraSelectionGroup(self):
+        border2Text = Label()
+        border2Text.AutoSize = False
+        border2Text.TextAlign = ContentAlignment.MiddleLeft
+        border2Text.Text = "Camera Selection:"
+        border2Text.Font = Font("Helvetica", 8, FontStyle.Regular)
+        border2Text.Location = System.Drawing.Point(20, titleBar+140)
+        border2Text.Size = System.Drawing.Size(106, 10)
+        border2Text.BackColor = Color.Transparent
+
+        border2 = Panel()
+        border2.Location = System.Drawing.Point(20, titleBar+150)#bottom=222
+        border2.Size = System.Drawing.Size(windowWidth-40, 72)
+        border2.BackColor = Color.FromArgb(69,69,69)
+
+        panel2 = Panel()
+        panel2.Location = System.Drawing.Point(21, titleBar+151)
+        panel2.Size = System.Drawing.Size(windowWidth-42, 70)
+        panel2.BackColor = Color.FromArgb(24,24,24)
+
+        # RadioButton for selecting cameras in the current project
+        self.radio_current_project = RadioButton()
+        self.radio_current_project.Text = "Current project"
+        self.radio_current_project.Font = Font("Helvetica", 8, FontStyle.Regular)
+        self.radio_current_project.Location = System.Drawing.Point(10, 10)  # Adjusted location
+        self.radio_current_project.Size = System.Drawing.Size(140, 20)
+        self.radio_current_project.Checked = True
+
+        # RadioButton for selecting cameras from a linked file
+        self.radio_linked_file = RadioButton()
+        self.radio_linked_file.Text = "Linked file"
+        self.radio_linked_file.Font = Font("Helvetica", 8, FontStyle.Regular)
+        self.radio_linked_file.Location = System.Drawing.Point(10, 35)  # Adjusted location
+        self.radio_linked_file.Size = System.Drawing.Size(140, 20)
+
+        # Button for selecting camera
+        self.select_camera_button = PictureBox()
+        self.select_camera_button.Location = System.Drawing.Point(150, 15)  # Adjusted location
+        self.select_camera_button.Size = System.Drawing.Size(80, 40)
+        self.select_camera_button.SizeMode = PictureBoxSizeMode.StretchImage
+        self.select_camera_button.Click += self.select_camera
+        self.select_camera_buttonInteractive = InteractivePictureBox(
+            self.select_camera_button, 'Select.png', 'SelectHover.png', 'SelectClick.png')
+
+        # Add the controls to panel2 instead of the form
+        panel2.Controls.Add(self.radio_current_project)
+        panel2.Controls.Add(self.radio_linked_file)
+        panel2.Controls.Add(self.select_camera_button)
+
+        # Finally, add panel2 (and its border) to the form
+        self.Controls.Add(border2Text)
+        self.Controls.Add(panel2)
+        self.Controls.Add(border2)
     def animate_resize(self, sender, event):
         step = 10  # Size change per tick, adjust for smoothness vs speed
         if self.is_expanding:
@@ -374,22 +428,90 @@ class CameraFOVApp(Form):
                 self.Width = self.original_width  # Ensure it ends exactly at target size
                 self.expand_button.Image = expand_image  # Change to expand image
                 self.toolTip.SetToolTip(self.expand_button, "Advanced features")
-    
     def toggle_expand(self, sender, event):
         # Toggle the direction of expansion based on the current width
         self.is_expanding = self.Width == self.original_width
         self.animation_timer.Start()  # Start the animation
+    def AddDORIRadioButtons(self):
+        border4Text = Label()
+        border4Text.AutoSize = False
+        border4Text.TextAlign = ContentAlignment.MiddleLeft
+        border4Text.Text = "Draw FOV:"
+        border4Text.Font = Font("Helvetica", 8, FontStyle.Regular)
+        border4Text.Location = System.Drawing.Point(20, titleBar+374)
+        border4Text.Size = System.Drawing.Size(106, 10)
+        border4Text.BackColor = Color.Transparent
+
+        border4 = Panel()
+        border4.Location = System.Drawing.Point(20, titleBar+384)#bottom=222
+        border4.Size = System.Drawing.Size(windowWidth-40, 122)
+        border4.BackColor = Color.FromArgb(69,69,69)
+
+        panel4 = Panel()
+        panel4.Location = System.Drawing.Point(21, titleBar+385)
+        panel4.Size = System.Drawing.Size(windowWidth-42, 120)
+        panel4.BackColor = Color.FromArgb(24,24,24)
+
+        # Panel for DORI Options
+        doriOptionsPanel = Panel()
+        doriOptionsPanel.Location = Point(30, 434)  # Adjust as needed, positioning below the label
+        doriOptionsPanel.Size = Size(140, 110)  # Adjust as needed
+        doriOptionsPanel.BackColor = Color.FromArgb(24, 24, 24)  # Optional: set background color
+        self.Controls.Add(doriOptionsPanel)
+
+        self.doriOptions = ["Detection (25px/m)", "Observation (63px/m)", "Recognition (125px/m)", "Identification (250px/m)"]
+        startY = 0  # Starting Y position for the first radio button within the panel
+
+        for i, option in enumerate(self.doriOptions):
+            radioButtonDORI = RadioButton()
+            radioButtonDORI.Text = option
+            radioButtonDORI.Font = Font("Helvetica", 8, FontStyle.Regular)
+            radioButtonDORI.Location = Point(0, startY + (i * 25))
+            radioButtonDORI.Size = Size(150, 20)
+            radioButtonDORI.Tag = option
+            radioButtonDORI.CheckedChanged += self.onDORIOptionChanged
+            doriOptionsPanel.Controls.Add(radioButtonDORI)  # Add to the panel instead of the form directly
+
+        # Finally, add panel2 (and its border) to the form
+        self.Controls.Add(border4Text)
+        self.Controls.Add(panel4)
+        self.Controls.Add(border4)
+
+    def onDORIOptionChanged(self, sender, event):
+        if sender.Checked:
+            # Safely access the text boxes, checking if they actually exist
+            hrTextBox = self.Controls.Find("horizontal_resolution", True)
+            fovTextBox = self.Controls.Find("fov_angle", True)
+            maxDistanceTextBox = self.Controls.Find("max_distance", True)
+
+            if hrTextBox and fovTextBox and maxDistanceTextBox:
+                try:
+                    hr = int(hrTextBox[0].Text)
+                    fov = int(fovTextBox[0].Text)
+                    distances = calculator_1(hr, fov)
+                    doriIndex = self.doriOptions.index(sender.Tag)
+                    calculatedValue = distances[doriIndex]
+                    
+                    # Update the max_distance textbox with the calculated value
+                    maxDistanceTextBox[0].Text = str(calculatedValue)
+                except ValueError:
+                    # Handle cases where conversion to int fails
+                    MessageBox.Show("Please enter valid numeric values for horizontal resolution and FOV angle.")
+            else:
+                MessageBox.Show("One or more required fields are missing.")
 
     def on_angle_changed(self, sender, event):
         if sender.Checked:
             self.additional_rotation_angle = sender.Tag  # Update the additional rotation angle based on the selected radio button
 
     def select_camera(self, sender, event):
+        self.WindowState = FormWindowState.Minimized
         if self.radio_current_project.Checked:
             self.select_cameras_current_project()
         elif self.radio_linked_file.Checked:
             self.select_cameras_linked_file()
-
+        self.WindowState = FormWindowState.Normal
+        self.Activate()
     def select_cameras_current_project(self):
         # Reset the selected cameras list
         self.selected_cameras = []

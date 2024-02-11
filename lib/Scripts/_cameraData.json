@@ -1,0 +1,9 @@
+{
+    "radioButtonSets": {
+      "set1": ["2560", "1920", "720", "Custom"],
+      "set2": ["250", "125", "63", "Custom"],
+      "set3": ["Option 3a", "Option 3b", "Option 3c", "Option 3d"],
+      "set4": ["1/2.5", "1/1.7", "1", "Custom"]
+    }
+  }
+  
