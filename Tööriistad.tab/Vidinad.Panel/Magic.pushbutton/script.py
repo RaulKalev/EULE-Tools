@@ -7,12 +7,15 @@ clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
 clr.AddReference('System.Windows.Forms')
 clr.AddReference('System.Drawing')
+import os
+import ConfigParser as configparser  # Use ConfigParser for IronPython compatibility
 from Autodesk.Revit.DB import *
 from Autodesk.Revit.DB import Color as RevitColor
 from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
-from System.Windows.Forms import Application, TrackBar, TickStyle, Form, Button, Label, ColorDialog, CheckBox, DialogResult, TextBox, Timer, Cursors, DrawMode, HorizontalAlignment, DialogResult, RichTextBox,FormWindowState, MessageBox, FormBorderStyle, BorderStyle, RadioButton, ListBox, GroupBox, ComboBox, ComboBoxStyle, AnchorStyles, Panel, PictureBoxSizeMode, PictureBox, ToolTip,FormStartPosition
-from System.Drawing import Color, Size, Point, Bitmap, Font, FontStyle,ContentAlignment,StringFormat,Graphics,Rectangle,SolidBrush,Brushes
+from System.Windows.Forms import Application, TrackBar, TickStyle, Form, Button, Label, ColorDialog, CheckBox, DialogResult, TextBox, Timer, Cursors, DrawMode, HorizontalAlignment, DialogResult, RichTextBox, FormWindowState, MessageBox, FormBorderStyle, BorderStyle, RadioButton, ListBox, GroupBox, ComboBox, ComboBoxStyle, AnchorStyles, Panel, PictureBoxSizeMode, PictureBox, ToolTip, FormStartPosition
+from System.Drawing import Color, Size, Point, Bitmap, Font, FontStyle, ContentAlignment, StringFormat, Graphics, Rectangle, SolidBrush, Brushes
 from System.Drawing.Drawing2D import SmoothingMode
+from System import Array, Object
 from math import radians, sin, cos
 from decimal import Decimal
 from Snippets._titlebar import TitleBar
@@ -179,11 +182,14 @@ class CameraFOVApp(Form):
 
         self.Controls.Add(self.titleBar)
         self.suffixLabel("°", 78, "fov_angle", "93")
-        self.suffixLabel("px", 108, "horizontal_resolution", "2160")
+        self.suffixLabel("px", 108, "horizontal_resolution", "1920")
         self.suffixLabel("m", 138, "max_distance", "0")
         # Labels and TextBoxes for user input with default values
         self.create_label_and_textbox("FOV Angle:", 78, "fov_angle", "93", "Enter cameras horizontal fov angle")
-        self.create_label_and_textbox("Horizontal Resolution:", 108, "horizontal_resolution", "2160","Enter your cameras horizontal resolution")
+        # Replace the following line:
+        # self.create_label_and_textbox("Horizontal Resolution:", 108, "horizontal_resolution", "1920", "Enter your cameras horizontal resolution")
+        # With the ComboBox for horizontal resolution:
+        self.create_label_and_combobox("Horizontal Resolution:", 108, "horizontal_resolution", ["3840","2592","2688","1920","1280","800","640"], "1920", "Select your cameras horizontal resolution")
         self.create_label_and_textbox("Max Distance:", 138, "max_distance", "0","Will be calculated once one DORI option is selected")
 
         self.run_button = PictureBox()
@@ -253,11 +259,20 @@ class CameraFOVApp(Form):
         self.toolTip.SetToolTip(self.radio_current_project, "Cameras are located in the current project")
         self.toolTip.SetToolTip(self.radio_linked_file, "Cameras are located in a linked file")
         self.toolTip.SetToolTip(self.expand_button, "Create filled regions")
+
+        self.FormClosing += self.on_form_closing  # Register the FormClosing event handler
+
+        self.load_settings()  # Load settings during initialization
+
+    def on_form_closing(self, sender, e):
+        self.save_settings(sender, e)  # Save settings when the form is closed
+
     def draw_combo_item(self, sender, e):
         e.DrawBackground()
         e.Graphics.DrawString(self.filledRegionTypeComboBox.Items[e.Index].ToString(),
                             e.Font, System.Drawing.Brushes.White, e.Bounds, StringFormat.GenericDefault)
         e.DrawFocusRectangle()
+        
     def suffixLabel(self, label_text, y, name, default_value="", label_size=(120, 20), textbox_size=(200, 20), label_color=System.Drawing.Color.LightGray, textbox_color=System.Drawing.Color.White, text_color=System.Drawing.Color.Black):
         suffixLabel = Label()
         suffixLabel.Text = label_text
@@ -267,6 +282,7 @@ class CameraFOVApp(Form):
         suffixLabel.ForeColor = Color.FromArgb(140,140,140)
         suffixLabel.BackColor = Color.FromArgb(49, 49, 49)
         self.Controls.Add(suffixLabel)
+
     def create_label_and_textbox(self, label_text, y, name, default_value="", label_size=(120, 20), textbox_size=(200, 20), label_color=System.Drawing.Color.LightGray, textbox_color=System.Drawing.Color.White, text_color=System.Drawing.Color.Black, tooltip_text=""):
         label = Label()
         label.Text = label_text
@@ -301,12 +317,56 @@ class CameraFOVApp(Form):
         boxCover.Size = System.Drawing.Size(79,18)
         boxCover.BackColor = Color.FromArgb(49, 49, 49)
         boxCover.Anchor = AnchorStyles.Top | AnchorStyles.Left
-     
+    
         self.Controls.Add(textbox)
         self.Controls.Add(boxCover)
         self.Controls.Add(boxBorder)
         self.Controls.Add(label)
         self.toolTip.SetToolTip(textbox, tooltip_text)
+
+    def create_label_and_combobox(self, label_text, y, name, options, default_value="", label_size=(120, 20), combobox_size=(200, 20), label_color=System.Drawing.Color.LightGray, combobox_color=System.Drawing.Color.White, text_color=System.Drawing.Color.Black, tooltip_text=""):
+        label = Label()
+        label.Text = label_text
+        label.Location = System.Drawing.Point(30, (y-3))
+        label.Font = Font("Helvetica", 10, FontStyle.Regular)
+        label.Size = System.Drawing.Size(150,20)
+        label.ForeColor = Color.FromArgb(240,240,240)
+        
+        combobox = ComboBox()
+        combobox.Location = System.Drawing.Point(172, y)
+        combobox.Name = name
+        combobox.Items.AddRange(Array[Object](options))
+        combobox.SelectedItem = default_value
+        combobox.Font = Font(default_value, 9, FontStyle.Regular)  # Adjust the font size as needed
+        combobox.Size = System.Drawing.Size(57,15)
+        combobox.BackColor = Color.FromArgb(49, 49, 49)
+        combobox.ForeColor = Color.FromArgb(240,240,240)
+        combobox.DropDownStyle = ComboBoxStyle.DropDownList
+
+        # Add event handler for SelectedIndexChanged event
+        combobox.SelectedIndexChanged += self.on_combobox_selection_changed
+
+        boxBorder = Panel()
+        boxBorder.Location = System.Drawing.Point(169, (y-3))
+        boxBorder.Size = System.Drawing.Size(81,20)
+        boxBorder.BackColor = Color.FromArgb(69,69,69)
+        boxBorder.Anchor = AnchorStyles.Top | AnchorStyles.Left
+
+        boxCover = Panel()
+        boxCover.Location = System.Drawing.Point(170, (y-2))
+        boxCover.Size = System.Drawing.Size(79,18)
+        boxCover.BackColor = Color.FromArgb(49, 49, 49)
+        boxCover.Anchor = AnchorStyles.Top | AnchorStyles.Left
+    
+        self.Controls.Add(combobox)
+        self.Controls.Add(boxCover)
+        self.Controls.Add(boxBorder)
+        self.Controls.Add(label)
+        self.toolTip.SetToolTip(combobox, tooltip_text)
+
+    def on_combobox_selection_changed(self, sender, event):
+        self.update_distance()
+
     def createFilledRegionComboBox(self):
         self.border1 = Panel()
         self.border1.Location = Point(30,365)
@@ -677,7 +737,7 @@ class CameraFOVApp(Form):
 
         for i, angle in enumerate(angles):
             radio_button = RadioButton()
-            radio_button.Text = "{}°".format(angle)
+            radio_button.Text = "%d°" % angle
             radio_button.Font = Font("Helvetica", 8, FontStyle.Regular)
             radio_button.Location = Point(10 + i * (40 + 14), 0)  # Adjust spacing as needed
             radio_button.Size = Size(50, 20)
@@ -821,31 +881,39 @@ class CameraFOVApp(Form):
         self.Controls.Add(border4)
     def onDORIOptionChanged(self, sender, event):
         if sender.Checked:
-            # Safely access the text boxes, checking if they actually exist
-            hrTextBox = self.Controls.Find("horizontal_resolution", True)
-            fovTextBox = self.Controls.Find("fov_angle", True)
-            maxDistanceTextBox = self.Controls.Find("max_distance", True)[0]  # Directly access the RichTextBox
+            self.selected_dori_option_index = self.doriOptions.index(sender.Tag)
+            self.update_distance()
+            
+    def update_distance(self):
+        # Safely access the text boxes, checking if they actually exist
+        hrTextBox = self.Controls.Find("horizontal_resolution", True)
+        fovTextBox = self.Controls.Find("fov_angle", True)
+        maxDistanceTextBox = self.Controls.Find("max_distance", True)[0]  # Directly access the RichTextBox
 
-            if hrTextBox and fovTextBox and maxDistanceTextBox:
-                try:
-                    hr = int(hrTextBox[0].Text)
-                    fov = int(fovTextBox[0].Text)
-                    distances = calculator_1(hr, fov)
-                    doriIndex = self.doriOptions.index(sender.Tag)
-                    calculatedValue = distances[doriIndex]
-                    
-                    # Update the max_distance textbox with the calculated value
-                    maxDistanceTextBox.Text = str(calculatedValue)
-                    
-                    # Reset the alignment to center after changing the text
-                    maxDistanceTextBox.SelectAll()
-                    maxDistanceTextBox.SelectionAlignment = HorizontalAlignment.Center
-                    maxDistanceTextBox.DeselectAll()
-                except ValueError:
-                    # Handle cases where conversion to int fails
-                    MessageBox.Show("Please enter valid numeric values for horizontal resolution and FOV angle.")
-            else:
-                MessageBox.Show("One or more required fields are missing.")
+        if hrTextBox and fovTextBox and maxDistanceTextBox:
+            try:
+                hr = int(hrTextBox[0].Text)
+                fov = int(fovTextBox[0].Text)
+                distances = calculator_1(hr, fov)
+                doriIndex = 0  # Default to the first DORI option (or change as needed)
+                if hasattr(self, 'selected_dori_option_index'):
+                    doriIndex = self.selected_dori_option_index
+                
+                calculatedValue = distances[doriIndex]
+                
+                # Update the max_distance textbox with the calculated value
+                maxDistanceTextBox.Text = str(calculatedValue)
+                
+                # Reset the alignment to center after changing the text
+                maxDistanceTextBox.SelectAll()
+                maxDistanceTextBox.SelectionAlignment = HorizontalAlignment.Center
+                maxDistanceTextBox.DeselectAll()
+            except ValueError:
+                # Handle cases where conversion to int fails
+                MessageBox.Show("Please enter valid numeric values for horizontal resolution and FOV angle.")
+        else:
+            MessageBox.Show("One or more required fields are missing.")
+
     def on_angle_changed(self, sender, event):
         if sender.Checked:
             self.additional_rotation_angle = float(sender.Tag)  # Assuming sender.Tag holds the angle in degrees
@@ -936,6 +1004,7 @@ class CameraFOVApp(Form):
             MessageBox.Show(message, "Creation Summary")  # Show message box with all messages
         else:
             MessageBox.Show("No filled regions were created.", "Creation Summary")
+
     def setComboBoxSelection(self):
         # Ensure there are items before setting the selected index
         if self.filledRegionTypeComboBox.Items.Count > 0:
@@ -968,6 +1037,24 @@ class CameraFOVApp(Form):
                 MessageBox.Show("Please select a filled region type.")
         except Exception as e:
             MessageBox.Show("Invalid input: " + str(e))
+    def load_settings(self):
+        config = configparser.ConfigParser()
+        if os.path.exists('settings.ini'):
+            config.read('settings.ini')
+            if config.has_section('Settings'):
+                if config.has_option('Settings', 'fov_angle'):
+                    self.Controls["fov_angle"].Text = config.get('Settings', 'fov_angle')
+                if config.has_option('Settings', 'horizontal_resolution'):
+                    self.Controls["horizontal_resolution"].Text = config.get('Settings', 'horizontal_resolution')
+
+    def save_settings(self, sender, e):
+        config = configparser.ConfigParser()
+        config.add_section('Settings')
+        config.set('Settings', 'fov_angle', self.Controls["fov_angle"].Text)
+        config.set('Settings', 'horizontal_resolution', self.Controls["horizontal_resolution"].Text)
+        with open('settings.ini', 'w') as configfile:
+            config.write(configfile)
+
 if __name__ == "__main__":
     Application.EnableVisualStyles()
     form = CameraFOVApp()
