@@ -178,12 +178,12 @@ class CameraFOVApp(Form):
         self.is_expanding = False  # Track direction of animation
 
         self.Controls.Add(self.titleBar)
-        self.suffixLabel("°", 78, "fov_angle", "95")
-        self.suffixLabel("px", 108, "horizontal_resolution", "1944")
+        self.suffixLabel("°", 78, "fov_angle", "93")
+        self.suffixLabel("px", 108, "horizontal_resolution", "2160")
         self.suffixLabel("m", 138, "max_distance", "0")
         # Labels and TextBoxes for user input with default values
-        self.create_label_and_textbox("FOV Angle:", 78, "fov_angle", "95", "Enter cameras horizontal fov angle")
-        self.create_label_and_textbox("Horizontal Resolution:", 108, "horizontal_resolution", "1944","Enter your cameras horizontal resolution")
+        self.create_label_and_textbox("FOV Angle:", 78, "fov_angle", "93", "Enter cameras horizontal fov angle")
+        self.create_label_and_textbox("Horizontal Resolution:", 108, "horizontal_resolution", "2160","Enter your cameras horizontal resolution")
         self.create_label_and_textbox("Max Distance:", 138, "max_distance", "0","Will be calculated once one DORI option is selected")
 
         self.run_button = PictureBox()

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import clr
 clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
@@ -12,12 +13,16 @@ from Snippets._intersections import find_closest_intersection
 
 uidoc = __revit__.ActiveUIDocument
 doc = uidoc.Document
+
 def list_filled_region_type_names_and_ids(doc):
     f_region_types = FilteredElementCollector(doc).OfClass(FilledRegionType)
-    # Adjusted to ensure proper access to the Name property
-    names_ids = [(fregion_type.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM).AsString(), fregion_type.Id) for fregion_type in f_region_types]
+    # Adjusted to ensure proper access to the Name property and filter for "dori"
+    names_ids = [
+        (fregion_type.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM).AsString(), fregion_type.Id)
+        for fregion_type in f_region_types
+        if 'dori' in fregion_type.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM).AsString().lower()
+    ]
     return names_ids
-
 
 def get_custom_detail_lines(doc, line_type_name):
     custom_lines = []
@@ -58,10 +63,13 @@ def simulate_camera_fov(doc, camera_position, fov_angle, max_distance_mm, detail
     with Transaction(doc, "Create FOV Filled Region") as trans:
         trans.Start()
         try:
-            # Iterate through the FOV angles
-            for angle in range(0, int(fov_angle), 1):
+            # Change resolution to 0.5°
+            resolution = 0.1
+
+            # Iterate through the FOV angles with the new resolution
+            for angle in range(0, int(fov_angle / resolution)):
                 # Calculate the direction for the current angle with rotation
-                current_angle = radians(-fov_angle/2 + angle + rotation_angle)
+                current_angle = radians(-fov_angle/2 + angle * resolution + rotation_angle)
                 direction = XYZ(sin(current_angle), -cos(current_angle), 0).Normalize()
 
                 # Create a line in the FOV direction with a defined length
