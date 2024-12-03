@@ -3,27 +3,72 @@ import clr
 clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
 clr.AddReference('System.Windows.Forms')
+clr.AddReference('System.Drawing')
 
 import os
 import json
 import codecs
 import threading
 from Autodesk.Revit.DB import FilteredElementCollector, ImportInstance, ElementId, Transaction
-from System.Windows.Forms import Form, ListView, View, Label, TextBox, Button, SaveFileDialog, OpenFileDialog, DialogResult, MessageBox, MessageBoxButtons, ListViewItem
+from System.Windows.Forms import Form, ListView, View, Label, TextBox, Button, SaveFileDialog, OpenFileDialog, DialogResult, MessageBox, MessageBoxButtons, ListViewItem, FormBorderStyle, Panel
+from System.Drawing import Color, Size, Point, Bitmap, Font, FontStyle, ContentAlignment, StringFormat, Graphics, Rectangle, SolidBrush, Brushes, Pen, Drawing2D
+
+from Snippets._titlebar import TitleBar
+from Snippets._imagePath import ImagePathHelper
+from Snippets._windowResize import WindowResizer
 
 # Access the Revit application and active document
 doc = __revit__.ActiveUIDocument.Document
 uidoc = __revit__.ActiveUIDocument
 
+#Setting up colors
+backgroundColor = Color.FromArgb(31,31,31)
+textColor = Color.FromArgb(240,240,240)
+lineColor = Color.FromArgb(69,69,69)
+
+# Instantiate ImagePathHelper
+image_helper = ImagePathHelper()
+windowWidth = 500
+windowHeight = 750
+titleBar = 40
+
+# Load images using the get_image_path function
+minimize_image_path = image_helper.get_image_path('Minimize.png')
+close_image_path = image_helper.get_image_path('Close.png')
+clear_image_path = image_helper.get_image_path('Clear.png')
+logo_image_path = image_helper.get_image_path('Logo.png')
+
+# Create Bitmap objects from the paths
+minimize_image = Bitmap(minimize_image_path)
+close_image = Bitmap(close_image_path)
+clear_image = Bitmap(clear_image_path)
+logo_image = Bitmap(logo_image_path)
+
 # Variable to store the path to the JSON file
 SETTINGS_FILE = None
 
-def load_data_in_background(self):
-    def load_data():
-        data = get_dwg_links_with_layers(self.doc, self.view)
-        self.Invoke(lambda: self.populate_list(data))  # Update UI from the main thread
+def get_project_save_folder():
+    """
+    Get or create the LayerToggles folder in the location of the opened Revit model.
+    """
+    try:
+        # Get the directory of the currently opened Revit project
+        project_path = doc.PathName  # Full path to the Revit project
+        if not project_path:
+            raise ValueError("The project must be saved before using the save/load feature.")
 
-    threading.Thread(target=load_data, daemon=True).start()
+        project_dir = os.path.dirname(project_path)
+        save_folder = os.path.join(project_dir, "LayerToggles")
+
+        # Create the LayerToggles folder if it doesn't exist
+        if not os.path.exists(save_folder):
+            os.makedirs(save_folder)
+
+        return save_folder
+
+    except Exception as e:
+        MessageBox.Show("Error creating project-specific folder: " + str(e), "Error", MessageBoxButtons.OK)
+        return None
 
 def get_dwg_links_with_layers(doc, view):
     """
@@ -65,69 +110,176 @@ class DWGCategoryAndLayerForm(Form):
         Form.__init__(self)
 
         self.Text = "DWG Categories and Layers with Save and Load"
-        self.Width = 700
-        self.Height = 750
+        appName = "DWG Layer manipulation"
+        self.Width = windowWidth
+        self.Height = windowHeight
         self.TopMost = True  # Ensures the window stays on top
+        self.titleBar = TitleBar(self, appName, logo_image, minimize_image, close_image)
+        self.FormBorderStyle = FormBorderStyle.None
+        self.Text = appName
+        self.Size = Size(windowWidth, windowHeight)
+        self.BackColor = backgroundColor
+        self.ForeColor = textColor
+        self.is_expanding = False
 
         self.doc = doc
         self.view = view
         self.original_data = dwg_data  # Store original data for resetting after search
         self.filtered_data = dwg_data  # Start with all data visible
 
+        self.Controls.Add(self.titleBar)
+
+        self.dragging = False
+        self.offset = None
+        
         self.init_ui()
 
     def init_ui(self):
         """
         Initialize UI components including real-time search functionality.
         """
-        label = Label()
-        label.Text = "DWG Categories and Layers:"
-        label.Top = 10
-        label.Left = 10
-        self.Controls.Add(label)
+        listStartHeight = titleBar+5
+        listHeight = 600
+        buttonRow = 700
+        searchTop = titleBar+5
+        searchLeft = 275
+
+        testColor = Color.FromArgb(100,240,100)
+
+        searchBox_CoverTop = Panel()
+        searchBox_CoverTop.Size = Size(200,2)
+        searchBox_CoverTop.Location = Point(searchLeft,searchTop)
+        searchBox_CoverTop.BackColor = backgroundColor
+
+        searchBox_BorderTop = Panel()
+        searchBox_BorderTop.Size = Size(199,1)
+        searchBox_BorderTop.Location = Point(searchLeft,searchTop)
+        searchBox_BorderTop.BackColor = lineColor
+
+        searchBox_CoverBottom = Panel()
+        searchBox_CoverBottom.Size = Size(200,2)
+        searchBox_CoverBottom.Location = Point(searchLeft,searchTop+18)
+        searchBox_CoverBottom.BackColor = backgroundColor
+
+        searchBox_BorderBottom = Panel()
+        searchBox_BorderBottom.Size = Size(199,1)
+        searchBox_BorderBottom.Location = Point(searchLeft,searchTop+18)
+        searchBox_BorderBottom.BackColor = lineColor
+
+        searchBox_CoverLeft = Panel()
+        searchBox_CoverLeft.Size = Size(2,20)
+        searchBox_CoverLeft.Location = Point(searchLeft,searchTop)
+        searchBox_CoverLeft.BackColor = backgroundColor
+
+        searchBox_BorderLeft = Panel()
+        searchBox_BorderLeft.Size = Size(1,19)
+        searchBox_BorderLeft.Location = Point(searchLeft,searchTop)
+        searchBox_BorderLeft.BackColor = lineColor
+
+        searchBox_CoverRight = Panel()
+        searchBox_CoverRight.Size = Size(2,20)
+        searchBox_CoverRight.Location = Point(searchLeft+198,searchTop)
+        searchBox_CoverRight.BackColor = backgroundColor
+
+        searchBox_BorderRight = Panel()
+        searchBox_BorderRight.Size = Size(1,19)
+        searchBox_BorderRight.Location = Point(searchLeft+198,searchTop)
+        searchBox_BorderRight.BackColor = lineColor
 
         self.search_box = TextBox()
-        self.search_box.Top = 40
-        self.search_box.Left = 10
-        self.search_box.Width = 600
+        self.search_box.Top = searchTop
+        self.search_box.Left = searchLeft
+        self.search_box.Width = 200
         self.search_box.TextChanged += self.perform_search
+        self.search_box.BackColor = backgroundColor
+        self.search_box.ForeColor = textColor
+
+        self.Controls.Add(searchBox_BorderRight)
+        self.Controls.Add(searchBox_BorderLeft)
+        self.Controls.Add(searchBox_BorderTop)
+        self.Controls.Add(searchBox_BorderBottom)
+        self.Controls.Add(searchBox_CoverRight)
+        self.Controls.Add(searchBox_CoverLeft)
+        self.Controls.Add(searchBox_CoverTop)
+        self.Controls.Add(searchBox_CoverBottom)
         self.Controls.Add(self.search_box)
 
+        listLabel = Label()
+        listLabel.AutoSize = False
+        listLabel.TextAlign = ContentAlignment.MiddleLeft
+        listLabel.Text = "CAD kihid:"
+        listLabel.Font = Font("Helvetica", 11, FontStyle.Regular)
+        listLabel.Location = Point(5, listStartHeight+3)
+        listLabel.Size = Size(100,15)
+        listLabel.BackColor = backgroundColor
+        listLabel.ForeColor = textColor
+
+        listBorderTop = Panel()
+        listBorderTop.Location = Point(0, listStartHeight)
+        listBorderTop.Size = Size(520, 26)
+        listBorderTop.BackColor = backgroundColor
+
+        listBorderTop_Border = Panel()
+        listBorderTop_Border.Location = Point(0, listStartHeight+23)
+        listBorderTop_Border.Size = Size(520, 1)
+        listBorderTop_Border.BackColor = lineColor
+
+        listBorderBottom = Panel()
+        listBorderBottom.Location = Point(0, listStartHeight+listHeight-20)
+        listBorderBottom.Size = Size(520, 20)
+        listBorderBottom.BackColor = backgroundColor
+
         self.listview = ListView()
-        self.listview.Top = 80
-        self.listview.Left = 10
-        self.listview.Width = 650
-        self.listview.Height = 500
+        self.listview.Top = listStartHeight
+        self.listview.Left = -1
+        self.listview.Width = windowWidth+20
+        self.listview.Height = listHeight
         self.listview.View = View.Details
         self.listview.CheckBoxes = True
         self.listview.FullRowSelect = True
-        self.listview.Columns.Add("Name", 400)
-        self.listview.Columns.Add("Type", 150)
+        self.listview.Columns.Add("Name", 550)
+        #self.listview.Columns.Add("Type", 150)
+        self.listview.Font = Font("Helvetica", 10, FontStyle.Regular)
+        self.listview.BackColor = backgroundColor
+        self.listview.ForeColor = textColor
         self.listview.ItemChecked += self.on_item_checked
 
+        self.listview.ColumnWidthChanging += self.prevent_column_resize
+
+        self.Controls.Add(listLabel)
+        self.Controls.Add(listBorderTop_Border)
+        self.Controls.Add(listBorderTop)
+        self.Controls.Add(listBorderBottom)
         self.populate_list(self.filtered_data)
         self.Controls.Add(self.listview)
 
         save_button = Button()
         save_button.Text = "Save Selections"
-        save_button.Top = 600
+        save_button.Top = buttonRow
         save_button.Left = 150
         save_button.Click += self.save_selections
         self.Controls.Add(save_button)
 
         load_button = Button()
         load_button.Text = "Load Selections"
-        load_button.Top = 600
+        load_button.Top = buttonRow
         load_button.Left = 350
         load_button.Click += self.load_selections
         self.Controls.Add(load_button)
 
-        close_button = Button()
-        close_button.Text = "Close"
-        close_button.Top = 650
-        close_button.Left = 300
-        close_button.Click += self.close_form
-        self.Controls.Add(close_button)
+        #close_button = Button()
+        #close_button.Text = "Close"
+        #close_button.Top = buttonRow
+        #close_button.Left = 300
+        #close_button.Click += self.close_form
+        #self.Controls.Add(close_button)
+
+    def load_data_in_background(self):
+        def load_data():
+            data = get_dwg_links_with_layers(self.doc, self.view)
+            self.Invoke(lambda: self.populate_list(data))  # Update UI from the main thread
+
+        threading.Thread(target=load_data, daemon=True).start()
 
     def populate_list(self, data):
         """
@@ -152,6 +304,13 @@ class DWGCategoryAndLayerForm(Form):
         finally:
             self.listview.EndUpdate()  # Resume drawing
 
+    def prevent_column_resize(self, sender, event):
+        """
+        Prevent columns from being resized.
+        """
+        event.Cancel = True
+        event.NewWidth = sender.Columns[event.ColumnIndex].Width  # Keep the current width
+
 
     def perform_search(self, sender, event):
         search_term = self.search_box.Text.strip().lower()
@@ -172,78 +331,67 @@ class DWGCategoryAndLayerForm(Form):
 
     def save_selections(self, sender, event):
         """
-        Save the current visibility selections from the ListView to a file, using the DWG's Category.Name as the key.
+        Save the current visibility selections from the ListView to a file,
+        using the DWG's Category.Name as the key and the current view's name as the filename.
         """
-        global SETTINGS_FILE
-
-        # Update the internal state from the current ListView state
-        for item in self.listview.Items:
-            name = item.Text.strip()
-            item_type = item.SubItems[1].Text
-            is_visible = item.Checked
-
-            if item_type == "DWG":
-                if name in self.original_data:
-                    self.original_data[name]["visibility"] = is_visible
-            elif item_type == "Layer":
-                for category, info in self.original_data.items():
-                    for layer, visible in info["layers"]:
-                        if layer == name:
-                            layer_index = info["layers"].index((layer, visible))
-                            info["layers"][layer_index] = (layer, is_visible)
-
-        # Prompt the user to select a save location if no file is set
-        if SETTINGS_FILE is None:
-            save_dialog = SaveFileDialog()
-            save_dialog.Title = "Save Layer Visibility Selections"
-            save_dialog.Filter = "JSON Files (*.json)|*.json"
-            save_dialog.DefaultExt = "json"
-            save_dialog.AddExtension = True
-            save_dialog.OverwritePrompt = True
-
-            if save_dialog.ShowDialog() == DialogResult.OK:
-                SETTINGS_FILE = save_dialog.FileName
-            else:
-                MessageBox.Show("Save canceled.", "Info", MessageBoxButtons.OK)
+        try:
+            save_folder = get_project_save_folder()
+            if not save_folder:
                 return
 
-        # Save selections using the Category.Name
-        selections = {
-            category: {
-                "layers": {layer: visible for layer, visible in info["layers"]},
-                "visibility": info["visibility"]
-            }
-            for category, info in self.original_data.items()
-        }
+            view_name = self.view.Name.replace(" ", "_")  # Replace spaces to make it filename-friendly
+            save_path = os.path.join(save_folder, view_name + "_LayerToggles.json")
 
-        try:
-            # Save the updated selections to the chosen file
-            with codecs.open(SETTINGS_FILE, "w", "utf-8") as f:
+            # Update the internal state from the current ListView state
+            for item in self.listview.Items:
+                name = item.Text.strip()
+                item_type = item.SubItems[1].Text
+                is_visible = item.Checked
+
+                if item_type == "DWG":
+                    if name in self.original_data:
+                        self.original_data[name]["visibility"] = is_visible
+                elif item_type == "Layer":
+                    for category, info in self.original_data.items():
+                        for layer, visible in info["layers"]:
+                            if layer == name:
+                                layer_index = info["layers"].index((layer, visible))
+                                info["layers"][layer_index] = (layer, is_visible)
+
+            # Prepare selections to save
+            selections = {
+                category: {
+                    "layers": {layer: visible for layer, visible in info["layers"]},
+                    "visibility": info["visibility"]
+                }
+                for category, info in self.original_data.items()
+            }
+
+            # Save to the JSON file
+            with codecs.open(save_path, "w", "utf-8") as f:
                 json.dump(selections, f, ensure_ascii=False, indent=4)
 
-            MessageBox.Show("Selections saved successfully to " + SETTINGS_FILE, "Info", MessageBoxButtons.OK)
+            MessageBox.Show("Selections saved successfully to " + save_path, "Info", MessageBoxButtons.OK)
 
         except Exception as e:
             MessageBox.Show("Error saving selections: " + str(e), "Error", MessageBoxButtons.OK)
 
     def load_selections(self, sender, event):
         """
-        Load visibility selections from a JSON file, apply them to the current view, and refresh the list while ensuring DWG names match.
+        Load visibility selections from a JSON file by matching DWG names,
+        apply them, and refresh the list.
         """
-        load_dialog = OpenFileDialog()
-        load_dialog.Title = "Load Layer Visibility Selections"
-        load_dialog.Filter = "JSON Files (*.json)|*.json"
-        load_dialog.DefaultExt = "json"
-
-        if load_dialog.ShowDialog() == DialogResult.OK:
-            file_path = load_dialog.FileName
-        else:
-            MessageBox.Show("Load canceled.", "Info", MessageBoxButtons.OK)
-            return
-
         try:
-            with codecs.open(file_path, "r", "utf-8") as f:
-                saved_selections = json.load(f)
+            save_folder = get_project_save_folder()
+            if not save_folder:
+                return
+
+            # List all JSON files in the save folder
+            json_files = [f for f in os.listdir(save_folder) if f.endswith("_LayerToggles.json")]
+
+            if not json_files:
+                MessageBox.Show("No saved selections found for this project.", "Info", MessageBoxButtons.OK)
+                return
 
             # Get the DWG names present in the current view
             current_dwg_names = [
@@ -251,37 +399,47 @@ class DWGCategoryAndLayerForm(Form):
                 if dwg.Category
             ]
 
-            # Check if all DWGs in the settings exist in the current view
-            for category in saved_selections.keys():
-                if category not in current_dwg_names:
-                    MessageBox.Show("Wrong DWG: '{}' is not present in the current view.".format(category), "Error", MessageBoxButtons.OK)
-                    return  # Exit without applying settings
+            # Iterate through the JSON files and look for matches
+            loaded = False
+            for file_name in json_files:
+                file_path = os.path.join(save_folder, file_name)
 
-            # Apply the loaded selections using the DWG Category.Name
-            for category, info in saved_selections.items():
-                self.toggle_dwg_visibility(category, info["visibility"])
-                for layer, visible in info["layers"].items():
-                    self.toggle_layer_visibility(layer, visible)
+                with codecs.open(file_path, "r", "utf-8") as f:
+                    saved_selections = json.load(f)
 
-            # Update the internal state with loaded selections
-            self.original_data = {
-                category: {
-                    "layers": sorted([(layer, visible) for layer, visible in info["layers"].items()], key=lambda x: x[0]),
-                    "visibility": info["visibility"]
-                }
-                for category, info in sorted(saved_selections.items())
-            }
-            self.filtered_data = self.original_data
+                # Check if any DWG name in the saved file matches the current view's DWG names
+                matching_dwg_names = [name for name in saved_selections.keys() if name in current_dwg_names]
 
-            # Refresh the list
-            self.populate_list(self.filtered_data)
+                if matching_dwg_names:
+                    # Apply the loaded selections for matched DWG names
+                    for category in matching_dwg_names:
+                        info = saved_selections[category]
+                        self.toggle_dwg_visibility(category, info["visibility"])
+                        for layer, visible in info["layers"].items():
+                            self.toggle_layer_visibility(layer, visible)
 
-            MessageBox.Show("Selections loaded and applied successfully from " + file_path, "Info", MessageBoxButtons.OK)
+                    # Update the internal state with loaded selections
+                    self.original_data = {
+                        category: {
+                            "layers": sorted([(layer, visible) for layer, visible in info["layers"].items()], key=lambda x: x[0]),
+                            "visibility": info["visibility"]
+                        }
+                        for category, info in saved_selections.items() if category in matching_dwg_names
+                    }
+                    self.filtered_data = self.original_data
+
+                    # Refresh the list
+                    self.populate_list(self.filtered_data)
+
+                    loaded = True
+                    MessageBox.Show("Selections loaded and applied successfully from " + file_path, "Info", MessageBoxButtons.OK)
+                    break
+
+            if not loaded:
+                MessageBox.Show("No matching DWG names found in saved files.", "Info", MessageBoxButtons.OK)
 
         except Exception as e:
             MessageBox.Show("Error loading selections: " + str(e), "Error", MessageBoxButtons.OK)
-
-
 
     def on_item_checked(self, sender, event):
         item = event.Item
